@@ -1,0 +1,400 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 10 22 40;
+    --surface: 15 31 53;
+    --border: 30 58 95;
+    --accent: 0 212 255;
+    --accent-light: 92 225 255;
+    --marker: 255 62 127;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-slate-200 antialiased;
+  }
+
+  /* Custom scrollbar for dark theme */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #152238;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #00a8cc;
+  }
+}
+
+@layer components {
+  /* Dark Card Component */
+  .card {
+    @apply bg-surface rounded-xl border border-border p-6 transition-all duration-300;
+  }
+
+  .card:hover {
+    @apply shadow-card-hover;
+    border-color: rgba(0, 212, 255, 0.3);
+  }
+
+  /* Glowing Card */
+  .card-glow {
+    @apply card relative overflow-hidden;
+  }
+
+  .card-glow::before {
+    content: "";
+    @apply absolute -top-1/2 -left-1/2 w-[200%] h-[200%] opacity-0 transition-opacity duration-500;
+    background: radial-gradient(circle, rgba(0, 212, 255, 0.1) 0%, transparent 70%);
+  }
+
+  .card-glow:hover::before {
+    @apply opacity-100;
+  }
+
+  /* Button Components */
+  .btn {
+    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    --tw-ring-offset-color: #0a1628;
+  }
+
+  .btn-primary {
+    @apply btn shadow-glow;
+    background-color: #00d4ff;
+    color: #0a1628;
+    --tw-ring-color: #00d4ff;
+  }
+
+  .btn-primary:hover {
+    background-color: #5ce1ff;
+  }
+
+  .btn-secondary {
+    @apply btn;
+    background-color: #ffd700;
+    color: #0a1628;
+    --tw-ring-color: #ffd700;
+  }
+
+  .btn-secondary:hover {
+    background-color: #ffe44d;
+  }
+
+  .btn-outline {
+    @apply btn;
+    border: 1px solid #00d4ff;
+    color: #00d4ff;
+    --tw-ring-color: #00d4ff;
+  }
+
+  .btn-outline:hover {
+    background-color: #00d4ff;
+    color: #0a1628;
+  }
+
+  .btn-ghost {
+    @apply btn text-slate-400 hover:text-white;
+  }
+
+  .btn-ghost:hover {
+    background-color: #1a2942;
+  }
+
+  /* Badge Components */
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .badge-primary {
+    @apply badge;
+    background-color: rgba(0, 212, 255, 0.2);
+    color: #00d4ff;
+  }
+
+  .badge-success {
+    @apply badge;
+    background-color: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+  }
+
+  .badge-warning {
+    @apply badge;
+    background-color: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+  }
+
+  .badge-danger {
+    @apply badge;
+    background-color: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+  }
+
+  .badge-info {
+    @apply badge;
+    background-color: rgba(59, 130, 246, 0.2);
+    color: #3b82f6;
+  }
+
+  .badge-marker {
+    @apply badge;
+    background-color: rgba(255, 62, 127, 0.2);
+    color: #ff3e7f;
+  }
+
+  /* Input Components */
+  .input {
+    @apply w-full rounded-lg border border-border px-4 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2;
+    background-color: #152238;
+  }
+
+  .input:focus {
+    border-color: #00d4ff;
+    --tw-ring-color: rgba(0, 212, 255, 0.2);
+  }
+
+  .select {
+    @apply input appearance-none cursor-pointer;
+  }
+
+  /* KPI Card */
+  .kpi-card {
+    @apply card flex flex-col items-center text-center;
+  }
+
+  .kpi-value {
+    @apply text-3xl font-bold;
+    color: #00d4ff;
+  }
+
+  .kpi-label {
+    @apply text-sm text-slate-400 uppercase tracking-wide mt-1;
+  }
+
+  /* Stat Card with Icon */
+  .stat-card {
+    @apply card flex items-center gap-4;
+  }
+
+  .stat-icon {
+    @apply flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10;
+  }
+
+  .stat-icon-pink {
+    @apply stat-icon bg-marker/10;
+  }
+
+  .stat-icon-green {
+    @apply stat-icon bg-success/10;
+  }
+
+  .stat-icon-yellow {
+    @apply stat-icon bg-secondary/10;
+  }
+
+  /* Sidebar Navigation */
+  .nav-link {
+    @apply flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-400 transition-all duration-200 hover:text-white;
+  }
+
+  .nav-link:hover {
+    background-color: #1a2942;
+  }
+
+  .nav-link.active {
+    @apply bg-accent/10 text-accent border-l-2 border-accent;
+  }
+
+  .nav-section-title {
+    @apply px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider;
+  }
+
+  /* Ring/Circle Progress */
+  .ring-chart {
+    @apply relative;
+  }
+
+  .ring-chart-bg {
+    stroke: theme('colors.border');
+  }
+
+  .ring-chart-fill {
+    stroke: theme('colors.accent.DEFAULT');
+    transition: stroke-dashoffset 0.5s ease;
+  }
+
+  /* Data Table */
+  .data-table {
+    @apply w-full;
+  }
+
+  .data-table thead {
+    @apply border-b border-border;
+  }
+
+  .data-table th {
+    @apply py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider;
+  }
+
+  .data-table tbody tr {
+    @apply border-b border-border/50 transition-colors;
+  }
+
+  .data-table tbody tr:hover {
+    background-color: #1a2942;
+  }
+
+  .data-table td {
+    @apply py-4 text-sm text-slate-300;
+  }
+
+  /* Tooltip */
+  .chart-tooltip {
+    @apply rounded-lg border border-border p-3 shadow-xl;
+    background-color: #152238;
+  }
+
+  /* Globe/Map Stats */
+  .global-stats {
+    @apply flex items-center justify-around py-4 border-t border-border mt-4;
+  }
+
+  .global-stat {
+    @apply text-center;
+  }
+
+  .global-stat-value {
+    @apply text-2xl font-bold text-white;
+  }
+
+  .global-stat-label {
+    @apply text-xs text-slate-500 uppercase mt-1;
+  }
+}
+
+@layer utilities {
+  /* Custom Scrollbar */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.border') transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: theme('colors.border');
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: theme('colors.accent.dark');
+  }
+
+  /* Glow Text */
+  .text-glow {
+    text-shadow: 0 0 10px theme('colors.accent.DEFAULT');
+  }
+
+  .text-glow-pink {
+    text-shadow: 0 0 10px theme('colors.marker.DEFAULT');
+  }
+
+  /* Gradient Text */
+  .text-gradient {
+    @apply bg-gradient-to-r from-accent to-accent-light bg-clip-text text-transparent;
+  }
+
+  .text-gradient-pink {
+    @apply bg-gradient-to-r from-marker to-marker-light bg-clip-text text-transparent;
+  }
+
+  /* Gradient Backgrounds */
+  .bg-gradient-dark {
+    @apply bg-gradient-to-br from-dark via-surface to-dark-50;
+  }
+
+  .bg-gradient-accent {
+    @apply bg-gradient-to-r from-accent to-accent-light;
+  }
+
+  /* Dot marker for map */
+  .map-dot {
+    @apply rounded-full shadow-glow-pink transition-transform duration-200 hover:scale-125;
+  }
+
+  /* Animated pulse for active markers */
+  .pulse-marker {
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(1.2);
+      opacity: 0.7;
+    }
+  }
+
+  /* Line chart grid */
+  .chart-grid {
+    stroke: theme('colors.border');
+    stroke-opacity: 0.3;
+  }
+}
+
+/* Leaflet Dark Theme Override */
+.leaflet-container {
+  background: #0a1628 !important;
+}
+
+.leaflet-popup-content-wrapper {
+  @apply text-slate-200 rounded-lg border border-border shadow-xl;
+  background-color: #152238;
+}
+
+.leaflet-popup-tip {
+  @apply border-border;
+  background-color: #152238;
+}
+
+.leaflet-popup-content {
+  @apply text-slate-200;
+}
+
+.leaflet-control-zoom a {
+  @apply bg-surface border-border text-slate-200;
+}
+
+.leaflet-control-zoom a:hover {
+  background-color: #1a2942;
+}
+
+.leaflet-control-attribution {
+  @apply bg-dark/80 text-slate-500;
+}
+
+.leaflet-control-attribution a {
+  @apply text-accent;
+}

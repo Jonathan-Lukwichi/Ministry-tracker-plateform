@@ -1,0 +1,26 @@
+# Node.js frontend dependencies
+/frontend/node_modules
+/frontend/.next
+/frontend/.env.local
+
+# Python virtual environment and cache
+/venv_py311
+__pycache__/
+*.pyc
+
+# Database files (It's better not to track databases in Git)
+*.db
+*.sqlite3
+
+# VS Code user settings
+.vscode/*.bak
+.vscode/settings.local.json
+
+# Claude AI settings
+.claude/
+
+# Temporary and OS-specific files
+temp_docx_content.txt
+nul
+.DS_Store
+Thumbs.db

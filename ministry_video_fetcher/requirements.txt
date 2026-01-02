@@ -1,0 +1,24 @@
+# Ministry Video Fetcher - Dependencies
+
+# Video fetching
+yt-dlp>=2024.1.0
+
+# Data handling
+pandas>=2.0.0
+
+# CLI formatting
+tabulate>=0.9.0
+
+# Type hints (for Python < 3.10)
+typing-extensions>=4.0.0
+
+# API Server
+fastapi>=0.100.0
+uvicorn>=0.23.0
+
+# Image Recognition
+deepface>=0.0.79
+opencv-python-headless>=4.5.0
+Pillow>=9.0.0
+requests>=2.27.0
+tf-keras>=2.15.0

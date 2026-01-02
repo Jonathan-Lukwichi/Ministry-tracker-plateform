@@ -1,0 +1,53 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Frontend (Next.js)",
+            "type": "node",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/frontend",
+            "runtimeExecutable": "npm",
+            "runtimeArgs": [
+                "run",
+                "dev"
+            ],
+            "console": "integratedTerminal",
+            "skipFiles": ["<node_internals>/**"]
+        },
+        {
+            "name": "Backend (FastAPI)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "api:app",
+                "--reload",
+                "--port",
+                "8008"
+            ],
+            "jinja": true,
+            "cwd": "${workspaceFolder}/ministry_video_fetcher",
+            "python": "${workspaceFolder}/venv_py311/Scripts/python.exe",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/ministry_video_fetcher"
+            }
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Full Stack (Frontend + Backend)",
+            "configurations": [
+                "Backend (FastAPI)",
+                "Frontend (Next.js)"
+            ],
+            "stopAll": true
+        }
+    ]
+}

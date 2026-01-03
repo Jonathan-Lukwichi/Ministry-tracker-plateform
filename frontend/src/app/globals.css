@@ -72,10 +72,11 @@
   }
 
   .btn-primary {
-    @apply btn shadow-glow;
+    @apply btn;
     background-color: #00d4ff;
     color: #0a1628;
     --tw-ring-color: #00d4ff;
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
   }
 
   .btn-primary:hover {
@@ -189,19 +190,23 @@
   }
 
   .stat-icon {
-    @apply flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10;
+    @apply flex h-12 w-12 items-center justify-center rounded-xl;
+    background-color: rgba(0, 212, 255, 0.1);
   }
 
   .stat-icon-pink {
-    @apply stat-icon bg-marker/10;
+    @apply flex h-12 w-12 items-center justify-center rounded-xl;
+    background-color: rgba(255, 62, 127, 0.1);
   }
 
   .stat-icon-green {
-    @apply stat-icon bg-success/10;
+    @apply flex h-12 w-12 items-center justify-center rounded-xl;
+    background-color: rgba(16, 185, 129, 0.1);
   }
 
   .stat-icon-yellow {
-    @apply stat-icon bg-secondary/10;
+    @apply flex h-12 w-12 items-center justify-center rounded-xl;
+    background-color: rgba(255, 215, 0, 0.1);
   }
 
   /* Sidebar Navigation */
@@ -214,7 +219,10 @@
   }
 
   .nav-link.active {
-    @apply bg-accent/10 text-accent border-l-2 border-accent;
+    @apply border-l-2;
+    background-color: rgba(0, 212, 255, 0.1);
+    color: #00d4ff;
+    border-color: #00d4ff;
   }
 
   .nav-section-title {
@@ -320,25 +328,28 @@
 
   /* Gradient Text */
   .text-gradient {
-    @apply bg-gradient-to-r from-accent to-accent-light bg-clip-text text-transparent;
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(to right, #00d4ff, #5ce1ff);
   }
 
   .text-gradient-pink {
-    @apply bg-gradient-to-r from-marker to-marker-light bg-clip-text text-transparent;
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(to right, #ff3e7f, #ff6b9d);
   }
 
   /* Gradient Backgrounds */
   .bg-gradient-dark {
-    @apply bg-gradient-to-br from-dark via-surface to-dark-50;
+    background: linear-gradient(to bottom right, #0a1628, #0f1f35, #1a2942);
   }
 
   .bg-gradient-accent {
-    @apply bg-gradient-to-r from-accent to-accent-light;
+    background: linear-gradient(to right, #00d4ff, #5ce1ff);
   }
 
   /* Dot marker for map */
   .map-dot {
-    @apply rounded-full shadow-glow-pink transition-transform duration-200 hover:scale-125;
+    @apply rounded-full transition-transform duration-200 hover:scale-125;
+    box-shadow: 0 0 15px rgba(255, 62, 127, 0.5);
   }
 
   /* Animated pulse for active markers */
@@ -392,9 +403,10 @@
 }
 
 .leaflet-control-attribution {
-  @apply bg-dark/80 text-slate-500;
+  @apply text-slate-500;
+  background-color: rgba(10, 22, 40, 0.8);
 }
 
 .leaflet-control-attribution a {
-  @apply text-accent;
+  color: #00d4ff;
 }

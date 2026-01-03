@@ -2,10 +2,17 @@
 Configuration for Ministry Video Fetcher
 
 Contains search queries, classification keywords, and settings for fetching
-videos of Apostle Narcisse Majila from YouTube.
+videos from YouTube and Facebook. Supports dynamic multi-preacher configuration.
 """
 
-from typing import List, Dict
+from typing import List, Dict, Optional
+
+# =============================================================================
+# PLATFORM CONSTANTS
+# =============================================================================
+
+PLATFORM_YOUTUBE = "youtube"
+PLATFORM_FACEBOOK = "facebook"
 
 # =============================================================================
 # TARGET PERSON CONFIGURATION
@@ -34,7 +41,80 @@ PRIMARY_CHANNEL = {
 }
 
 # =============================================================================
-# SEARCH QUERIES
+# FACEBOOK PAGES (FETCH ALL VIDEOS)
+# =============================================================================
+
+FACEBOOK_PAGES: List[Dict] = [
+    {
+        "name": "Ramah Full Gospel Church Pretoria",
+        "url": "https://www.facebook.com/ramahfgpta/videos",
+        "page_id": "ramahfgpta",
+    },
+    # Discovered pages will be added here automatically
+]
+
+# =============================================================================
+# FACEBOOK SEARCH QUERIES
+# =============================================================================
+
+FACEBOOK_SEARCH_QUERIES: List[str] = [
+    # Exact name matches with titles
+    "Apostle Narcisse Majila",
+    "Apotre Narcisse Majila",
+    "Apôtre Narcisse Majila",
+    "Pasteur Narcisse Majila",
+    "Pastor Narcisse Majila",
+
+    # Name only
+    "Narcisse Majila",
+    "Naricisse Majila",
+
+    # French combinations
+    "Narcisse Majila predication",
+    "Narcisse Majila enseignement",
+    "Narcisse Majila message",
+    "Narcisse Majila culte",
+
+    # English combinations
+    "Narcisse Majila sermon",
+    "Narcisse Majila preaching",
+    "Narcisse Majila teaching",
+
+    # Church-related
+    "Ramah Full Gospel Church Pretoria",
+    "Ramah Church Pretoria Narcisse",
+]
+
+# =============================================================================
+# FACEBOOK FETCHER SETTINGS
+# =============================================================================
+
+FACEBOOK_FETCHER_CONFIG = {
+    # Rate limiting (Facebook is stricter)
+    "request_delay": 3.0,        # Seconds between requests (higher for Facebook)
+    "retry_count": 3,            # Number of retries on failure
+    "retry_delay": 5.0,          # Initial delay between retries
+
+    # Cookies file for authentication
+    # To export cookies from your browser:
+    # 1. Install "Get cookies.txt LOCALLY" extension in Chrome/Firefox
+    # 2. Log in to Facebook in your browser
+    # 3. Go to facebook.com and click the extension
+    # 4. Click "Export" and save as "facebook_cookies.txt" in the ministry_video_fetcher folder
+    # 5. The file path below will automatically use it
+    "cookies_file": "facebook_cookies.txt",
+
+    # yt-dlp options for Facebook
+    "quiet": True,
+    "no_warnings": True,
+    "ignoreerrors": True,
+
+    # Max results per search/page
+    "max_results_per_query": 50,  # Facebook returns fewer results typically
+}
+
+# =============================================================================
+# SEARCH QUERIES (YOUTUBE)
 # =============================================================================
 
 SEARCH_QUERIES: List[str] = [
@@ -344,3 +424,183 @@ STORAGE_CONFIG = {
     # Confidence threshold for flagging for review
     "review_threshold": 0.70,
 }
+
+# =============================================================================
+# DYNAMIC SEARCH QUERY GENERATOR
+# =============================================================================
+
+
+def generate_search_queries(
+    name: str,
+    title: Optional[str] = None,
+    primary_church: Optional[str] = None,
+    platform: str = "youtube"
+) -> List[str]:
+    """
+    Generate platform-specific search queries from a preacher's name.
+
+    Args:
+        name: Full name of the preacher (e.g., "Narcisse Majila")
+        title: Optional title (e.g., "Apostle", "Pastor")
+        primary_church: Optional church name
+        platform: 'youtube' or 'facebook'
+
+    Returns:
+        List of search queries optimized for the platform
+    """
+    queries = []
+    name_parts = name.split()
+    last_name = name_parts[-1] if len(name_parts) > 1 else name
+    first_name = name_parts[0] if len(name_parts) > 1 else name
+
+    # Title variations in English and French
+    title_pairs = [
+        ("Apostle", "Apotre"),
+        ("Apostle", "Apôtre"),
+        ("Pastor", "Pasteur"),
+        ("Bishop", "Évêque"),
+        ("Prophet", "Prophète"),
+        ("Evangelist", "Évangéliste"),
+        ("Reverend", "Révérend"),
+    ]
+
+    # Preaching keywords in English and French
+    keywords_en = ["sermon", "preaching", "teaching", "message", "deliverance"]
+    keywords_fr = ["predication", "enseignement", "message", "culte", "delivrance"]
+
+    if platform == "youtube":
+        # YouTube supports exact match with quotes
+        queries.append(f'"{name}"')
+
+        # With preaching keywords
+        for kw in keywords_en + keywords_fr:
+            queries.append(f'"{name}" {kw}')
+
+        # With title variations
+        if title:
+            queries.append(f'"{title} {name}"')
+            queries.append(f'"{title} {last_name}"')
+
+        # Add common title variations
+        for en_title, fr_title in title_pairs:
+            queries.append(f'"{en_title} {name}"')
+            queries.append(f'"{fr_title} {name}"')
+            queries.append(f'"{en_title} {last_name}"')
+            queries.append(f'"{fr_title} {last_name}"')
+
+        # Church-related queries
+        if primary_church:
+            queries.append(f'"{primary_church}"')
+            queries.append(f'"{primary_church}" {last_name}')
+            queries.append(f'"{primary_church}" {name}')
+
+    else:  # Facebook
+        # Facebook search doesn't use quotes the same way
+        queries.append(name)
+
+        # With preaching keywords
+        for kw in keywords_en + keywords_fr:
+            queries.append(f"{name} {kw}")
+
+        # With title variations
+        if title:
+            queries.append(f"{title} {name}")
+            queries.append(f"{title} {last_name}")
+
+        # Add common title variations
+        for en_title, fr_title in title_pairs:
+            queries.append(f"{en_title} {name}")
+            queries.append(f"{fr_title} {name}")
+
+        # Church-related queries
+        if primary_church:
+            queries.append(primary_church)
+            queries.append(f"{primary_church} {last_name}")
+
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_queries = []
+    for q in queries:
+        q_lower = q.lower()
+        if q_lower not in seen:
+            seen.add(q_lower)
+            unique_queries.append(q)
+
+    return unique_queries
+
+
+def generate_identity_markers(
+    name: str,
+    title: Optional[str] = None,
+    primary_church: Optional[str] = None,
+    aliases: Optional[List[str]] = None
+) -> Dict:
+    """
+    Generate identity markers for video classification from preacher info.
+
+    Args:
+        name: Full name of the preacher
+        title: Optional title
+        primary_church: Optional church name
+        aliases: Optional list of name aliases
+
+    Returns:
+        Dictionary with required_names, acceptable_names, and church_names
+    """
+    name_parts = name.split()
+    last_name = name_parts[-1] if len(name_parts) > 1 else name
+    first_name = name_parts[0] if len(name_parts) > 1 else name
+
+    # Required names (strongest match)
+    required_names = [name.lower(), last_name.lower()]
+    if aliases:
+        for alias in aliases:
+            if alias.lower() not in required_names:
+                required_names.append(alias.lower())
+
+    # Acceptable names (good match with titles)
+    acceptable_names = []
+    for t in ["apostle", "apotre", "apôtre", "pastor", "pasteur",
+              "bishop", "prophet", "evangelist", "reverend", "dr."]:
+        acceptable_names.append(f"{t} {name.lower()}")
+        acceptable_names.append(f"{t} {last_name.lower()}")
+        acceptable_names.append(f"{t} {first_name.lower()}")
+
+    # Additional descriptors
+    for desc in ["man of god", "servant of god", "serviteur de dieu", "homme de dieu"]:
+        acceptable_names.append(f"{desc} {name.lower()}")
+        acceptable_names.append(f"{desc} {last_name.lower()}")
+
+    # Church names
+    church_names = []
+    if primary_church:
+        church_names.append(primary_church.lower())
+        # Also add abbreviated versions
+        church_words = primary_church.lower().split()
+        if len(church_words) > 2:
+            # Create acronym
+            acronym = "".join(w[0] for w in church_words if w not in ["of", "the", "and"])
+            church_names.append(acronym)
+
+    return {
+        "required_names": required_names,
+        "acceptable_names": acceptable_names,
+        "church_names": church_names,
+        "strict_mode": True,
+        "require_name_not_just_church": True,
+    }
+
+
+def get_photos_directory(preacher_id: int) -> str:
+    """
+    Get the photos directory path for a specific preacher.
+
+    Args:
+        preacher_id: ID of the preacher
+
+    Returns:
+        Path to the preacher's photos directory
+    """
+    import os
+    base_dir = FACE_RECOGNITION_CONFIG.get("photos_dir", "photos")
+    return os.path.join(base_dir, f"preacher_{preacher_id}")

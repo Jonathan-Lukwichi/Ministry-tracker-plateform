@@ -30,6 +30,12 @@ import {
   UpcomingPredictions,
   HistoricalPatterns,
   AIStatus,
+  Preacher,
+  PreacherCreate,
+  PreachersResponse,
+  PreacherPhotosResponse,
+  PreacherFetchResult,
+  PreacherSearchQueries,
 } from "./types";
 
 // API base URL - change this to your backend URL
@@ -323,6 +329,126 @@ export const api = {
    */
   getAIStatus: async (): Promise<AIStatus> => {
     return fetchAPI<AIStatus>("/api/ai/status");
+  },
+
+  // =========================================================================
+  // PREACHER API
+  // =========================================================================
+
+  /**
+   * Create a new preacher
+   */
+  createPreacher: async (data: PreacherCreate): Promise<Preacher> => {
+    return fetchAPI<Preacher>("/api/preachers", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get all preachers
+   */
+  getPreachers: async (): Promise<PreachersResponse> => {
+    return fetchAPI<PreachersResponse>("/api/preachers");
+  },
+
+  /**
+   * Get a preacher by ID
+   */
+  getPreacher: async (preacherId: number): Promise<Preacher> => {
+    return fetchAPI<Preacher>(`/api/preachers/${preacherId}`);
+  },
+
+  /**
+   * Update a preacher
+   */
+  updatePreacher: async (preacherId: number, data: Partial<PreacherCreate>): Promise<Preacher> => {
+    return fetchAPI<Preacher>(`/api/preachers/${preacherId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Delete a preacher
+   */
+  deletePreacher: async (preacherId: number): Promise<{ success: boolean; message: string }> => {
+    return fetchAPI<{ success: boolean; message: string }>(`/api/preachers/${preacherId}`, {
+      method: "DELETE",
+    });
+  },
+
+  /**
+   * Get preacher photos
+   */
+  getPreacherPhotos: async (preacherId: number): Promise<PreacherPhotosResponse> => {
+    return fetchAPI<PreacherPhotosResponse>(`/api/preachers/${preacherId}/photos`);
+  },
+
+  /**
+   * Upload a preacher photo
+   */
+  uploadPreacherPhoto: async (preacherId: number, file: File): Promise<{ success: boolean; filename: string; message: string }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch(`${API_BASE_URL}/api/preachers/${preacherId}/photos`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to upload photo");
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Delete a preacher photo
+   */
+  deletePreacherPhoto: async (preacherId: number, photoId: number): Promise<{ success: boolean; message: string }> => {
+    const response = await fetch(`${API_BASE_URL}/api/preachers/${preacherId}/photos/${photoId}`, {
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to delete photo");
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Get preacher stats
+   */
+  getPreacherStats: async (preacherId: number): Promise<StatsResponse> => {
+    return fetchAPI<StatsResponse>(`/api/preachers/${preacherId}/stats`);
+  },
+
+  /**
+   * Get preacher videos
+   */
+  getPreacherVideos: async (preacherId: number, limit: number = 10): Promise<VideosResponse> => {
+    return fetchAPI<VideosResponse>(`/api/preachers/${preacherId}/videos?limit=${limit}`);
+  },
+
+  /**
+   * Fetch videos for a preacher from a platform
+   */
+  fetchForPreacher: async (preacherId: number, platform: "youtube" | "facebook"): Promise<PreacherFetchResult> => {
+    return fetchAPI<PreacherFetchResult>(`/api/preachers/${preacherId}/fetch/${platform}`, {
+      method: "POST",
+    });
+  },
+
+  /**
+   * Get auto-generated search queries for a preacher
+   */
+  getPreacherSearchQueries: async (preacherId: number): Promise<PreacherSearchQueries> => {
+    return fetchAPI<PreacherSearchQueries>(`/api/preachers/${preacherId}/search-queries`);
   },
 
   // =========================================================================

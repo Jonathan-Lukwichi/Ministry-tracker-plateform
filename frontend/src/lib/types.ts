@@ -499,3 +499,63 @@ export interface AIStatus {
   hasRequestedModel?: boolean;
   message: string;
 }
+
+// =============================================================================
+// PREACHER TYPES
+// =============================================================================
+
+export interface Preacher {
+  id: number;
+  name: string;
+  aliases: string[];
+  title?: string;
+  primary_church?: string;
+  bio?: string;
+  is_active: boolean;
+  created_at?: string;
+  video_count?: number;
+}
+
+export interface PreacherCreate {
+  name: string;
+  title?: string;
+  primary_church?: string;
+  bio?: string;
+}
+
+export interface PreachersResponse {
+  preachers: Preacher[];
+  total: number;
+}
+
+export interface PreacherPhoto {
+  id: number;
+  preacher_id: number;
+  file_path: string;
+  original_filename: string;
+  uploaded_at: string;
+  data?: string;
+  mime_type?: string;
+}
+
+export interface PreacherPhotosResponse {
+  photos: PreacherPhoto[];
+  total: number;
+}
+
+export interface PreacherFetchResult {
+  status: string;
+  preacher_id: number;
+  platform: string;
+  videos_found: number;
+  videos_added: number;
+  videos_updated: number;
+  errors: string[];
+}
+
+export interface PreacherSearchQueries {
+  preacher_id: number;
+  preacher_name: string;
+  youtube: string[];
+  facebook: string[];
+}

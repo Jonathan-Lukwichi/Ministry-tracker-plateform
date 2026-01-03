@@ -3,14 +3,16 @@
 Ministry Video Fetcher - Main Entry Point
 
 A tool to fetch, classify, and track preaching videos of
-Apostle Narcisse Majila from YouTube.
+Apostle Narcisse Majila from YouTube and Facebook.
 
 Usage:
-    python main.py fetch    - Run full fetch from all sources
-    python main.py stats    - Show database statistics
-    python main.py review   - List videos flagged for review
-    python main.py export   - Export to CSV
-    python main.py sample   - Show sample videos
+    python main.py fetch              - Run full fetch from YouTube (default)
+    python main.py fetch --facebook   - Run fetch from Facebook only
+    python main.py fetch --all        - Run fetch from all platforms
+    python main.py stats              - Show database statistics
+    python main.py review             - List videos flagged for review
+    python main.py export             - Export to CSV
+    python main.py sample             - Show sample videos
 """
 
 import sys
@@ -25,19 +27,30 @@ from config import EXPORT_CONFIG
 
 
 def cmd_fetch(args):
-    """Run full fetch from all sources."""
+    """Run fetch from specified platforms."""
+    platform = getattr(args, 'platform', 'youtube')
+
     print("\n" + "=" * 60)
     print("MINISTRY VIDEO FETCHER")
     print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Platform: {platform.upper()}")
     print("=" * 60 + "\n")
 
     db = Database()
     fetcher = VideoFetcher(db)
 
-    print("Starting video fetch...")
+    print(f"Starting video fetch from {platform}...")
     print("-" * 60)
 
-    summary = fetcher.fetch_all()
+    if platform == "youtube":
+        summary = fetcher.fetch_all()
+    elif platform == "facebook":
+        summary = fetcher.fetch_facebook()
+    elif platform == "all":
+        summary = fetcher.fetch_all_platforms()
+    else:
+        print(f"Unknown platform: {platform}")
+        return
 
     print("-" * 60)
     summary.print_summary()
@@ -515,7 +528,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py fetch                    Run full fetch from YouTube
+  python main.py fetch                    Run fetch from YouTube (default)
+  python main.py fetch --facebook         Run fetch from Facebook only
+  python main.py fetch --all              Run fetch from all platforms
+  python main.py fetch -p facebook        Same as --facebook
   python main.py stats                    Show database statistics
   python main.py review                   List videos needing review
   python main.py export                   Export to CSV
@@ -531,7 +547,38 @@ Examples:
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # Fetch command
-    fetch_parser = subparsers.add_parser("fetch", help="Run full fetch from all sources")
+    fetch_parser = subparsers.add_parser(
+        "fetch",
+        help="Run fetch from video sources",
+        description="Fetch videos from YouTube and/or Facebook"
+    )
+    fetch_parser.add_argument(
+        "--platform", "-p",
+        choices=["youtube", "facebook", "all"],
+        default="youtube",
+        help="Platform to fetch from (default: youtube)"
+    )
+    fetch_parser.add_argument(
+        "--youtube", "-y",
+        action="store_const",
+        const="youtube",
+        dest="platform",
+        help="Fetch from YouTube only (default)"
+    )
+    fetch_parser.add_argument(
+        "--facebook", "-f",
+        action="store_const",
+        const="facebook",
+        dest="platform",
+        help="Fetch from Facebook only"
+    )
+    fetch_parser.add_argument(
+        "--all", "-a",
+        action="store_const",
+        const="all",
+        dest="platform",
+        help="Fetch from all platforms (YouTube and Facebook)"
+    )
     fetch_parser.set_defaults(func=cmd_fetch)
 
     # Stats command

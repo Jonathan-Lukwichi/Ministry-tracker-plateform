@@ -1707,6 +1707,368 @@ def get_ai_status():
         }
 
 
+# =============================================================================
+# PREACHER ENDPOINTS
+# =============================================================================
+
+class PreacherCreate(BaseModel):
+    name: str
+    title: Optional[str] = None
+    primary_church: Optional[str] = None
+    bio: Optional[str] = None
+
+
+class PreacherUpdate(BaseModel):
+    name: Optional[str] = None
+    title: Optional[str] = None
+    primary_church: Optional[str] = None
+    bio: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+@app.get("/api/preachers")
+def get_preachers():
+    """Get all preachers with video counts."""
+    try:
+        preachers = db.get_all_preachers()
+        return {"preachers": preachers}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/preachers/{preacher_id}")
+def get_preacher(preacher_id: int):
+    """Get a specific preacher by ID."""
+    try:
+        preacher = db.get_preacher(preacher_id)
+        if preacher is None:
+            raise HTTPException(status_code=404, detail=f"Preacher {preacher_id} not found")
+        return preacher
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/preachers")
+def create_preacher(preacher: PreacherCreate):
+    """Create a new preacher."""
+    try:
+        # Generate aliases from name
+        from models import Preacher as PreacherModel
+        aliases = PreacherModel.generate_aliases(preacher.name, preacher.title)
+
+        preacher_id = db.create_preacher(
+            name=preacher.name,
+            aliases=aliases,
+            title=preacher.title,
+            primary_church=preacher.primary_church,
+            bio=preacher.bio
+        )
+
+        return {
+            "id": preacher_id,
+            "name": preacher.name,
+            "aliases": aliases,
+            "title": preacher.title,
+            "primary_church": preacher.primary_church,
+            "message": f"Preacher '{preacher.name}' created successfully"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/preachers/{preacher_id}")
+def update_preacher(preacher_id: int, preacher: PreacherUpdate):
+    """Update a preacher."""
+    try:
+        # Build update kwargs
+        kwargs = {}
+        if preacher.name is not None:
+            kwargs["name"] = preacher.name
+            # Regenerate aliases if name changed
+            from models import Preacher as PreacherModel
+            kwargs["aliases"] = PreacherModel.generate_aliases(preacher.name, preacher.title)
+        if preacher.title is not None:
+            kwargs["title"] = preacher.title
+        if preacher.primary_church is not None:
+            kwargs["primary_church"] = preacher.primary_church
+        if preacher.bio is not None:
+            kwargs["bio"] = preacher.bio
+        if preacher.is_active is not None:
+            kwargs["is_active"] = preacher.is_active
+
+        success = db.update_preacher(preacher_id, **kwargs)
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Preacher {preacher_id} not found")
+
+        return {"success": True, "message": f"Preacher {preacher_id} updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/preachers/{preacher_id}")
+def delete_preacher(preacher_id: int):
+    """Delete a preacher."""
+    try:
+        success = db.delete_preacher(preacher_id)
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Preacher {preacher_id} not found")
+
+        return {"success": True, "message": f"Preacher {preacher_id} deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/preachers/{preacher_id}/photos")
+async def upload_preacher_photo(preacher_id: int, file: UploadFile = File(...)):
+    """Upload a reference photo for a preacher."""
+    import shutil
+    from config import get_photos_directory
+
+    try:
+        # Validate preacher exists
+        preacher = db.get_preacher(preacher_id)
+        if preacher is None:
+            raise HTTPException(status_code=404, detail=f"Preacher {preacher_id} not found")
+
+        # Validate file type
+        allowed_types = ["image/jpeg", "image/png", "image/jpg"]
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type. Allowed: {', '.join(allowed_types)}"
+            )
+
+        # Get preacher-specific photos directory
+        photos_dir = get_photos_directory(preacher_id)
+        os.makedirs(photos_dir, exist_ok=True)
+
+        # Generate filename
+        import uuid
+        ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+        new_filename = f"{uuid.uuid4().hex[:8]}_{file.filename}"
+        file_path = os.path.join(photos_dir, new_filename)
+
+        # Save file
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        # Get file size
+        file_size = os.path.getsize(file_path)
+
+        # Add to database
+        reference_id = db.add_face_reference(
+            preacher_id=preacher_id,
+            file_path=file_path,
+            original_filename=file.filename,
+            file_size=file_size
+        )
+
+        # Clear face recognizer cache for this preacher
+        from face_recognition import clear_face_recognizer_cache
+        clear_face_recognizer_cache(preacher_id)
+
+        return {
+            "success": True,
+            "id": reference_id,
+            "filename": new_filename,
+            "size": file_size,
+            "message": f"Photo uploaded for preacher {preacher_id}"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/preachers/{preacher_id}/photos")
+def get_preacher_photos(preacher_id: int):
+    """Get all reference photos for a preacher."""
+    try:
+        # Validate preacher exists
+        preacher = db.get_preacher(preacher_id)
+        if preacher is None:
+            raise HTTPException(status_code=404, detail=f"Preacher {preacher_id} not found")
+
+        photos = db.get_face_references(preacher_id)
+        return {"photos": photos, "count": len(photos)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/preachers/{preacher_id}/photos/{photo_id}")
+def delete_preacher_photo(preacher_id: int, photo_id: int):
+    """Delete a reference photo for a preacher."""
+    try:
+        # Get the photo to find file path
+        photos = db.get_face_references(preacher_id)
+        photo = next((p for p in photos if p["id"] == photo_id), None)
+
+        if photo is None:
+            raise HTTPException(status_code=404, detail=f"Photo {photo_id} not found")
+
+        # Delete file
+        if os.path.exists(photo["file_path"]):
+            os.remove(photo["file_path"])
+
+        # Delete from database
+        success = db.delete_face_reference(photo_id)
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Photo {photo_id} not found")
+
+        # Clear face recognizer cache
+        from face_recognition import clear_face_recognizer_cache
+        clear_face_recognizer_cache(preacher_id)
+
+        return {"success": True, "message": f"Photo {photo_id} deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/preachers/{preacher_id}/stats")
+def get_preacher_stats(preacher_id: int):
+    """Get statistics for a specific preacher."""
+    try:
+        # Validate preacher exists
+        preacher = db.get_preacher(preacher_id)
+        if preacher is None:
+            raise HTTPException(status_code=404, detail=f"Preacher {preacher_id} not found")
+
+        stats = db.get_statistics_for_preacher(preacher_id)
+        return stats
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/preachers/{preacher_id}/fetch/{platform}")
+def fetch_for_preacher(preacher_id: int, platform: str):
+    """
+    Fetch videos for a specific preacher from YouTube or Facebook.
+
+    Args:
+        preacher_id: ID of the preacher
+        platform: 'youtube', 'facebook', or 'all'
+    """
+    try:
+        # Validate preacher exists
+        preacher = db.get_preacher(preacher_id)
+        if preacher is None:
+            raise HTTPException(status_code=404, detail=f"Preacher {preacher_id} not found")
+
+        # Validate platform
+        valid_platforms = ["youtube", "facebook", "all"]
+        if platform not in valid_platforms:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid platform. Valid options: {', '.join(valid_platforms)}"
+            )
+
+        # Check if preacher has reference photos
+        photo_count = db.get_face_reference_count(preacher_id)
+        if photo_count < 3:
+            return {
+                "warning": f"Preacher has only {photo_count} reference photos. "
+                           "At least 3 photos recommended for accurate face recognition.",
+                "status": "ready_with_warning"
+            }
+
+        # Run the fetch
+        from fetcher import run_fetch_for_preacher
+        summary = run_fetch_for_preacher(preacher_id, platform)
+
+        return {
+            "success": True,
+            "platform": platform,
+            "preacher_id": preacher_id,
+            "preacher_name": preacher["name"],
+            "videos_found": summary.total_videos_found,
+            "videos_added": summary.new_videos_added,
+            "duplicates_removed": summary.duplicates_removed,
+            "music_excluded": summary.music_excluded,
+            "total_in_database": summary.total_in_database,
+            "errors": summary.errors[:5] if summary.errors else []
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/preachers/{preacher_id}/videos")
+def get_preacher_videos(preacher_id: int, limit: int = 100):
+    """Get videos for a specific preacher."""
+    try:
+        # Validate preacher exists
+        preacher = db.get_preacher(preacher_id)
+        if preacher is None:
+            raise HTTPException(status_code=404, detail=f"Preacher {preacher_id} not found")
+
+        df = db.get_videos_by_preacher(preacher_id, limit=limit)
+
+        if df.empty:
+            return {"videos": [], "total": 0, "preacher": preacher["name"]}
+
+        videos = []
+        for _, row in df.iterrows():
+            videos.append({
+                "video_id": row["video_id"],
+                "title": row["title"],
+                "channel_name": row["channel_name"],
+                "duration": row["duration"],
+                "upload_date": row["upload_date"],
+                "view_count": row["view_count"],
+                "content_type": row["content_type"],
+                "language": row["language_detected"],
+                "video_url": row["video_url"],
+                "thumbnail_url": row["thumbnail_url"],
+            })
+
+        return {"videos": videos, "total": len(df), "preacher": preacher["name"]}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/preachers/{preacher_id}/search-queries")
+def get_preacher_search_queries(preacher_id: int):
+    """Get the auto-generated search queries for a preacher."""
+    try:
+        # Validate preacher exists
+        preacher = db.get_preacher(preacher_id)
+        if preacher is None:
+            raise HTTPException(status_code=404, detail=f"Preacher {preacher_id} not found")
+
+        from models import Preacher as PreacherModel
+        preacher_obj = PreacherModel.from_dict(preacher)
+
+        return {
+            "youtube_queries": preacher_obj.get_search_queries("youtube"),
+            "facebook_queries": preacher_obj.get_search_queries("facebook"),
+            "aliases": preacher_obj.aliases,
+            "identity_markers": preacher_obj.get_identity_markers()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/", response_class=HTMLResponse)
 def serve_frontend():
     """Serve the minimal frontend."""
@@ -2115,6 +2477,126 @@ def serve_frontend():
 </body>
 </html>
     """
+
+
+# =============================================================================
+# SYNC ENDPOINTS
+# =============================================================================
+
+# Import fetcher for sync operations
+try:
+    from fetcher import VideoFetcher
+    FETCHER_AVAILABLE = True
+except ImportError:
+    FETCHER_AVAILABLE = False
+
+
+@app.post("/api/sync/youtube")
+async def sync_youtube():
+    """Trigger YouTube video sync."""
+    if not FETCHER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Video fetcher not available")
+
+    try:
+        fetcher = VideoFetcher()
+        summary = fetcher.fetch_all()
+        return {
+            "status": "success",
+            "platform": "youtube",
+            "videos_found": summary.total_videos_found,
+            "videos_added": summary.new_videos_added,
+            "duplicates": summary.duplicates_removed,
+            "music_excluded": summary.music_excluded,
+            "errors": len(summary.errors),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/sync/facebook")
+async def sync_facebook():
+    """Trigger Facebook video sync."""
+    if not FETCHER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Video fetcher not available")
+
+    try:
+        fetcher = VideoFetcher()
+        summary = fetcher.fetch_facebook()
+        return {
+            "status": "success",
+            "platform": "facebook",
+            "videos_found": summary.total_videos_found,
+            "videos_added": summary.new_videos_added,
+            "duplicates": summary.duplicates_removed,
+            "music_excluded": summary.music_excluded,
+            "errors": len(summary.errors),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/sync/all")
+async def sync_all_platforms():
+    """Trigger sync from all platforms (YouTube and Facebook)."""
+    if not FETCHER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Video fetcher not available")
+
+    try:
+        fetcher = VideoFetcher()
+        summary = fetcher.fetch_all_platforms()
+        return {
+            "status": "success",
+            "platform": "all",
+            "videos_found": summary.total_videos_found,
+            "videos_added": summary.new_videos_added,
+            "duplicates": summary.duplicates_removed,
+            "music_excluded": summary.music_excluded,
+            "total_in_database": summary.total_in_database,
+            "errors": len(summary.errors),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/videos/by-platform")
+def get_videos_by_platform():
+    """Get video breakdown by platform."""
+    stats = db.get_platform_statistics()
+    return {
+        "youtube": stats.get("youtube", 0),
+        "facebook": stats.get("facebook", 0),
+        "hours_by_platform": stats.get("hours_by_platform", {}),
+    }
+
+
+@app.get("/api/videos/platform/{platform}")
+def get_platform_videos(
+    platform: str,
+    limit: int = 100,
+):
+    """Get videos from a specific platform."""
+    if platform not in ["youtube", "facebook"]:
+        raise HTTPException(status_code=400, detail="Platform must be 'youtube' or 'facebook'")
+
+    df = db.get_sermons_by_platform(platform)
+
+    videos = []
+    for _, row in df.head(limit).iterrows():
+        videos.append({
+            "video_id": row["video_id"],
+            "title": row["title"],
+            "channel_name": row["channel_name"],
+            "duration": row["duration"],
+            "upload_date": row["upload_date"],
+            "view_count": row.get("view_count"),
+            "content_type": row["content_type"],
+            "language": row["language_detected"],
+            "video_url": row["video_url"],
+            "thumbnail_url": row.get("thumbnail_url"),
+            "platform": row.get("platform", "youtube"),
+        })
+
+    return {"videos": videos, "total": len(df), "platform": platform}
 
 
 if __name__ == "__main__":

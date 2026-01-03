@@ -3,13 +3,15 @@ Content Classifier for Ministry Video Fetcher
 
 Classifies videos as PREACHING, MUSIC, or UNKNOWN based on
 title, description, duration analysis, and face recognition.
+
+Supports preacher-specific classification with dynamic identity markers.
 """
 
 import os
 import re
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict, List
 
-from models import VideoMetadata, ContentType, Language
+from models import VideoMetadata, ContentType, Language, Preacher
 from config import (
     PREACHING_KEYWORDS_EN,
     PREACHING_KEYWORDS_FR,
@@ -25,6 +27,8 @@ from config import (
     CHANNEL_TRUST_LEVELS,
     FACE_VERIFICATION_REQUIREMENTS,
     STORAGE_CONFIG,
+    generate_identity_markers,
+    get_photos_directory,
 )
 
 # Compute photos directory relative to project root
@@ -47,15 +51,28 @@ class ContentClassifier:
 
     Uses keyword matching, duration analysis, and confidence scoring
     to determine content type and flag uncertain classifications.
+
+    Supports preacher-specific classification with dynamic identity markers.
     """
 
-    def __init__(self, use_frame_extraction: bool = True):
+    def __init__(
+        self,
+        use_frame_extraction: bool = True,
+        preacher_id: Optional[int] = None,
+        preacher: Optional[Preacher] = None
+    ):
         """
         Initialize classifier with keyword sets and face recognition.
 
         Args:
             use_frame_extraction: Whether to extract video frames for face detection
+            preacher_id: ID of the preacher for preacher-specific classification
+            preacher: Preacher object (alternative to preacher_id)
         """
+        # Store preacher info
+        self.preacher_id = preacher_id
+        self.preacher = preacher
+
         # --- Keyword setup ---
         self.preaching_keywords = set(kw.lower() for kw in PREACHING_KEYWORDS_EN + PREACHING_KEYWORDS_FR)
         self.music_keywords = set(kw.lower() for kw in MUSIC_KEYWORDS)
@@ -63,6 +80,28 @@ class ContentClassifier:
         self.french_words = set(w.lower() for w in FRENCH_INDICATORS)
         self.english_words = set(w.lower() for w in ENGLISH_INDICATORS)
         self.config = CLASSIFICATION_CONFIG
+
+        # --- Dynamic Identity Markers ---
+        if preacher:
+            # Generate identity markers from preacher data
+            self.identity_markers = preacher.get_identity_markers()
+        elif preacher_id:
+            # Try to load preacher from database
+            try:
+                from database import Database
+                db = Database()
+                preacher_data = db.get_preacher(preacher_id)
+                if preacher_data:
+                    self.preacher = Preacher.from_dict(preacher_data)
+                    self.identity_markers = self.preacher.get_identity_markers()
+                else:
+                    self.identity_markers = IDENTITY_MARKERS
+            except Exception as e:
+                print(f"Warning: Could not load preacher {preacher_id}: {e}")
+                self.identity_markers = IDENTITY_MARKERS
+        else:
+            # Use legacy hardcoded identity markers
+            self.identity_markers = IDENTITY_MARKERS
 
         # --- Face Recognition setup ---
         self.use_frame_extraction = use_frame_extraction
@@ -72,9 +111,17 @@ class ContentClassifier:
 
         if FACE_RECOGNITION_AVAILABLE:
             try:
+                # Use preacher-specific photos directory if preacher_id provided
+                photos_dir = None
+                if preacher_id:
+                    photos_dir = get_photos_directory(preacher_id)
+                else:
+                    photos_dir = PHOTOS_DIR
+
                 self.face_recognizer = get_face_recognizer(
+                    preacher_id=preacher_id,
                     config=FACE_RECOGNITION_CONFIG,
-                    photos_dir=PHOTOS_DIR  # Use computed project-relative path
+                    photos_dir=photos_dir
                 )
                 print(f"Face recognition initialized with {len(self.face_recognizer.reference_image_paths)} reference images.")
             except Exception as e:
@@ -99,7 +146,9 @@ class ContentClassifier:
 
     def _check_identity_markers(self, text: str) -> Tuple[bool, float, bool]:
         """
-        Check if video contains identity markers (apostle's name or church).
+        Check if video contains identity markers (preacher's name or church).
+
+        Uses dynamic identity markers based on the configured preacher.
 
         Args:
             text: Combined title and description text (lowercase)
@@ -108,25 +157,25 @@ class ContentClassifier:
             Tuple of (has_identity, boost_score, has_name)
             - has_identity: True if name/church found (for backwards compat)
             - boost_score: 0.0-0.30 based on match strength
-            - has_name: True ONLY if apostle's actual name found (not just church)
+            - has_name: True ONLY if preacher's actual name found (not just church)
         """
-        require_name = IDENTITY_MARKERS.get("require_name_not_just_church", True)
+        require_name = self.identity_markers.get("require_name_not_just_church", True)
 
         # Check for required names (strongest match)
-        for name in IDENTITY_MARKERS["required_names"]:
+        for name in self.identity_markers.get("required_names", []):
             if name in text:
                 return True, 0.30, True  # has_identity, boost, has_name
 
         # Check acceptable names (good match)
-        for name in IDENTITY_MARKERS["acceptable_names"]:
+        for name in self.identity_markers.get("acceptable_names", []):
             if name in text:
                 return True, 0.25, True  # has_identity, boost, has_name
 
         # Check church names - NO LONGER counts as identity if require_name is True
-        for church in IDENTITY_MARKERS["church_names"]:
+        for church in self.identity_markers.get("church_names", []):
             if church in text:
                 if require_name:
-                    # Church name found but NOT the apostle's name
+                    # Church name found but NOT the preacher's name
                     # Return small boost but has_identity=False, has_name=False
                     return False, 0.10, False
                 else:
@@ -214,7 +263,7 @@ class ContentClassifier:
         Classify a video and update its metadata.
 
         Uses multi-layer filtering:
-        1. Identity validation (apostle's name or church in title/description)
+        1. Identity validation (preacher's name or church in title/description)
         2. Channel trust levels
         3. Face verification
         4. Keyword matching
@@ -226,14 +275,18 @@ class ContentClassifier:
         Returns:
             Updated VideoMetadata with content_type, confidence, and review flag
         """
+        # Set preacher_id on video if classifier has one
+        if self.preacher_id and not video.preacher_id:
+            video.preacher_id = self.preacher_id
+
         # Get text to analyze
         text = self._get_searchable_text(video)
 
-        # --- NEW: Check identity markers ---
+        # --- Check identity markers ---
         # Returns (has_identity, boost, has_name)
-        # has_name = True ONLY if apostle's actual name found (not just church)
+        # has_name = True ONLY if preacher's actual name found (not just church)
         has_identity, identity_boost, has_name = self._check_identity_markers(text)
-        video.identity_matched = has_name  # Only True if apostle's name found
+        video.identity_matched = has_name  # Only True if preacher's name found
 
         # --- NEW: Get channel trust level ---
         channel_trust_level = self._get_channel_trust_level(video.channel_name)
@@ -273,19 +326,19 @@ class ContentClassifier:
         # Get duration-based score
         duration_score = self._get_duration_score(video.duration)
 
-        # --- STRICTER CHECK: Require apostle's NAME in title ---
-        # For ALL channels (including trusted), require the apostle's actual name
+        # --- STRICTER CHECK: Require preacher's NAME in title ---
+        # For ALL channels (including trusted), require the preacher's actual name
         # This ensures we don't include videos of other preachers from same church
         # Church name alone is NOT enough
         if not has_name:
             # Check if face verification is available AND actually verified
             if not face_verified or face_confidence < 0.70:
-                # No apostle name AND no verified face = reject
+                # No preacher name AND no verified face = reject
                 video.content_type = ContentType.UNKNOWN
                 video.confidence_score = 0.25
                 video.needs_review = True
                 video.language_detected = self._detect_language(text)
-                print(f"Rejected - no apostle name: {video.video_id} - '{video.title[:60]}...'")
+                print(f"Rejected - no preacher name: {video.video_id} - '{video.title[:60]}...'")
                 return video
 
         # --- Check face verification requirements for unknown channels ---
@@ -579,13 +632,54 @@ class ContentClassifier:
         return summary
 
 
-def classify_video(video: VideoMetadata) -> VideoMetadata:
-    """Convenience function to classify a single video."""
-    classifier = ContentClassifier()
+def classify_video(
+    video: VideoMetadata,
+    preacher_id: Optional[int] = None,
+    preacher: Optional[Preacher] = None
+) -> VideoMetadata:
+    """
+    Convenience function to classify a single video.
+
+    Args:
+        video: VideoMetadata to classify
+        preacher_id: Optional preacher ID for preacher-specific classification
+        preacher: Optional Preacher object
+
+    Returns:
+        Classified VideoMetadata
+    """
+    classifier = ContentClassifier(preacher_id=preacher_id, preacher=preacher)
     return classifier.classify(video)
 
 
-def classify_videos(videos: list[VideoMetadata]) -> list[VideoMetadata]:
-    """Convenience function to classify multiple videos."""
-    classifier = ContentClassifier()
+def classify_videos(
+    videos: list[VideoMetadata],
+    preacher_id: Optional[int] = None,
+    preacher: Optional[Preacher] = None
+) -> list[VideoMetadata]:
+    """
+    Convenience function to classify multiple videos.
+
+    Args:
+        videos: List of VideoMetadata objects
+        preacher_id: Optional preacher ID for preacher-specific classification
+        preacher: Optional Preacher object
+
+    Returns:
+        List of classified VideoMetadata objects
+    """
+    classifier = ContentClassifier(preacher_id=preacher_id, preacher=preacher)
     return classifier.batch_classify(videos)
+
+
+def get_classifier_for_preacher(preacher_id: int) -> ContentClassifier:
+    """
+    Get a content classifier configured for a specific preacher.
+
+    Args:
+        preacher_id: ID of the preacher
+
+    Returns:
+        ContentClassifier instance configured for the preacher
+    """
+    return ContentClassifier(preacher_id=preacher_id)

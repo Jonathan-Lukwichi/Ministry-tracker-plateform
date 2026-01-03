@@ -3,12 +3,18 @@ Database Module for Ministry Video Fetcher
 
 Handles all SQLite database operations including creating tables,
 storing videos, and querying data.
+
+Supports multi-preacher architecture with preacher-specific video tracking.
 """
 
 import sqlite3
+import json
+import os
+import shutil
+import glob
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 import pandas as pd
 
 from models import VideoMetadata, FetchLog, ContentType, Language
@@ -81,6 +87,9 @@ class Database:
         if "channel_trust_level" not in columns:
             cursor.execute("ALTER TABLE videos ADD COLUMN channel_trust_level INTEGER DEFAULT 0")
 
+        if "platform" not in columns:
+            cursor.execute("ALTER TABLE videos ADD COLUMN platform TEXT DEFAULT 'youtube'")
+
         # Fetch logs table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS fetch_logs (
@@ -113,9 +122,157 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_videos_needs_review
             ON videos(needs_review)
         """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_videos_platform
+            ON videos(platform)
+        """)
+
+        # =====================================================================
+        # PREACHERS TABLE (Multi-preacher support)
+        # =====================================================================
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS preachers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                aliases TEXT,
+                title TEXT,
+                primary_church TEXT,
+                bio TEXT,
+                is_active INTEGER DEFAULT 1,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT
+            )
+        """)
+
+        # Preacher face reference photos
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS preacher_face_references (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                preacher_id INTEGER NOT NULL,
+                file_path TEXT NOT NULL,
+                original_filename TEXT,
+                file_size INTEGER,
+                uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (preacher_id) REFERENCES preachers(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Add preacher_id to videos table if not exists
+        if "preacher_id" not in columns:
+            cursor.execute("ALTER TABLE videos ADD COLUMN preacher_id INTEGER")
+
+        # Create index for preacher filtering
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_videos_preacher
+            ON videos(preacher_id)
+        """)
+
+        # Run migration to set up initial preacher data
+        self._migrate_initial_preacher(cursor)
 
         conn.commit()
         conn.close()
+
+    def _migrate_initial_preacher(self, cursor):
+        """
+        Migration: Create initial preacher (Apostle Narcisse Majila) if not exists.
+        Assigns existing videos and photos to preacher_id=1.
+        """
+        # Check if preachers table is empty
+        cursor.execute("SELECT COUNT(*) as count FROM preachers")
+        preacher_count = cursor.fetchone()["count"]
+
+        if preacher_count == 0:
+            # Create the initial preacher (Apostle Narcisse Majila)
+            aliases = json.dumps([
+                "Narcisse Majila",
+                "Apotre Narcisse Majila",
+                "Apôtre Narcisse Majila",
+                "Pastor Narcisse Majila",
+                "Pasteur Narcisse Majila",
+                "Apostle Majila",
+                "Apotre Majila",
+                "Naricisse Majila",
+            ])
+
+            cursor.execute("""
+                INSERT INTO preachers (name, aliases, title, primary_church, created_at)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                "Narcisse Majila",
+                aliases,
+                "Apostle",
+                "Ramah Full Gospel Church Pretoria",
+                datetime.now().isoformat()
+            ))
+
+            preacher_id = cursor.lastrowid
+            print(f"Created initial preacher: Apostle Narcisse Majila (id={preacher_id})")
+
+            # Update all existing videos to belong to this preacher
+            cursor.execute(
+                "UPDATE videos SET preacher_id = ? WHERE preacher_id IS NULL",
+                (preacher_id,)
+            )
+            updated_count = cursor.rowcount
+            if updated_count > 0:
+                print(f"Assigned {updated_count} existing videos to preacher_id={preacher_id}")
+
+            # Migrate existing photos to preacher-specific directory
+            self._migrate_photos_for_preacher(cursor, preacher_id)
+
+    def _migrate_photos_for_preacher(self, cursor, preacher_id: int):
+        """Migrate existing photos from photos/ to photos/preacher_{id}/"""
+        # Get project root directory
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+        project_dir = os.path.dirname(module_dir)
+        old_photos_dir = os.path.join(project_dir, "photos")
+        new_photos_dir = os.path.join(project_dir, "photos", f"preacher_{preacher_id}")
+
+        # Check if old photos directory exists and has photos
+        if not os.path.isdir(old_photos_dir):
+            return
+
+        # Find existing photos (not in subdirectories)
+        photo_patterns = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
+        existing_photos = []
+        for pattern in photo_patterns:
+            existing_photos.extend(glob.glob(os.path.join(old_photos_dir, pattern)))
+
+        if not existing_photos:
+            return
+
+        # Create preacher-specific directory
+        os.makedirs(new_photos_dir, exist_ok=True)
+
+        # Move photos and create database records
+        for photo_path in existing_photos:
+            filename = os.path.basename(photo_path)
+            new_path = os.path.join(new_photos_dir, filename)
+
+            try:
+                # Move the file
+                shutil.move(photo_path, new_path)
+
+                # Get file size
+                file_size = os.path.getsize(new_path)
+
+                # Insert into database
+                cursor.execute("""
+                    INSERT INTO preacher_face_references
+                    (preacher_id, file_path, original_filename, file_size, uploaded_at)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (
+                    preacher_id,
+                    new_path,
+                    filename,
+                    file_size,
+                    datetime.now().isoformat()
+                ))
+
+                print(f"Migrated photo: {filename} -> preacher_{preacher_id}/")
+            except Exception as e:
+                print(f"Error migrating photo {filename}: {e}")
 
     # =========================================================================
     # VIDEO OPERATIONS
@@ -562,6 +719,74 @@ class Database:
         return result
 
     # =========================================================================
+    # PLATFORM-SPECIFIC METHODS
+    # =========================================================================
+
+    def get_sermons_by_platform(self, platform: str) -> pd.DataFrame:
+        """Get sermons from a specific platform (youtube or facebook)."""
+        conn = self._get_connection()
+        df = pd.read_sql_query(
+            """SELECT * FROM videos
+               WHERE (platform = ? OR (platform IS NULL AND ? = 'youtube'))
+               AND content_type IN ('PREACHING', 'UNKNOWN')
+               ORDER BY upload_date DESC""",
+            conn,
+            params=(platform, platform)
+        )
+        conn.close()
+        return df
+
+    def get_platform_statistics(self) -> dict:
+        """Get video count breakdown by platform."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        stats = {}
+
+        # Count by platform
+        cursor.execute(
+            """SELECT
+                COALESCE(platform, 'youtube') as platform,
+                COUNT(*) as count
+               FROM videos
+               WHERE content_type IN ('PREACHING', 'UNKNOWN')
+               GROUP BY COALESCE(platform, 'youtube')"""
+        )
+        for row in cursor.fetchall():
+            stats[row["platform"]] = row["count"]
+
+        # Total hours by platform
+        cursor.execute(
+            """SELECT
+                COALESCE(platform, 'youtube') as platform,
+                SUM(duration) / 3600.0 as hours
+               FROM videos
+               WHERE content_type IN ('PREACHING', 'UNKNOWN')
+               AND duration IS NOT NULL
+               GROUP BY COALESCE(platform, 'youtube')"""
+        )
+        stats["hours_by_platform"] = {}
+        for row in cursor.fetchall():
+            stats["hours_by_platform"][row["platform"]] = round(row["hours"] or 0, 1)
+
+        conn.close()
+        return stats
+
+    def get_video_count_by_platform(self, platform: str) -> int:
+        """Get count of videos from a specific platform."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT COUNT(*) as count FROM videos
+               WHERE (platform = ? OR (platform IS NULL AND ? = 'youtube'))
+               AND content_type IN ('PREACHING', 'UNKNOWN')""",
+            (platform, platform)
+        )
+        result = cursor.fetchone()["count"]
+        conn.close()
+        return result
+
+    # =========================================================================
     # FACE VERIFICATION METHODS
     # =========================================================================
 
@@ -777,6 +1002,486 @@ class Database:
         df = pd.read_sql_query("SELECT * FROM videos ORDER BY upload_date DESC", conn)
         conn.close()
         return df
+
+
+    # =========================================================================
+    # PREACHER CRUD OPERATIONS
+    # =========================================================================
+
+    def create_preacher(
+        self,
+        name: str,
+        aliases: List[str],
+        title: Optional[str] = None,
+        primary_church: Optional[str] = None,
+        bio: Optional[str] = None
+    ) -> int:
+        """
+        Create a new preacher.
+
+        Args:
+            name: Full name of the preacher
+            aliases: List of name variations for search
+            title: Title (Apostle, Pastor, etc.)
+            primary_church: Primary church name
+            bio: Biography text
+
+        Returns:
+            The ID of the created preacher
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO preachers (name, aliases, title, primary_church, bio, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            name,
+            json.dumps(aliases),
+            title,
+            primary_church,
+            bio,
+            datetime.now().isoformat()
+        ))
+
+        conn.commit()
+        preacher_id = cursor.lastrowid
+        conn.close()
+
+        # Create photos directory for this preacher
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+        project_dir = os.path.dirname(module_dir)
+        photos_dir = os.path.join(project_dir, "photos", f"preacher_{preacher_id}")
+        os.makedirs(photos_dir, exist_ok=True)
+
+        return preacher_id
+
+    def get_preacher(self, preacher_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get a preacher by ID.
+
+        Returns:
+            Dict with preacher data or None
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM preachers WHERE id = ?", (preacher_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            data = dict(row)
+            data["aliases"] = json.loads(data["aliases"]) if data["aliases"] else []
+            return data
+        return None
+
+    def get_preacher_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        """Get a preacher by name (case-insensitive partial match)."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM preachers WHERE LOWER(name) LIKE LOWER(?)",
+            (f"%{name}%",)
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            data = dict(row)
+            data["aliases"] = json.loads(data["aliases"]) if data["aliases"] else []
+            return data
+        return None
+
+    def get_all_preachers(self) -> List[Dict[str, Any]]:
+        """Get all preachers with video counts."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT p.*,
+                   COUNT(DISTINCT v.video_id) as video_count,
+                   COALESCE(SUM(v.duration) / 3600.0, 0) as total_hours
+            FROM preachers p
+            LEFT JOIN videos v ON p.id = v.preacher_id
+                AND v.content_type IN ('PREACHING', 'UNKNOWN')
+            WHERE p.is_active = 1
+            GROUP BY p.id
+            ORDER BY p.created_at DESC
+        """)
+
+        results = []
+        for row in cursor.fetchall():
+            data = dict(row)
+            data["aliases"] = json.loads(data["aliases"]) if data["aliases"] else []
+            data["total_hours"] = round(data["total_hours"], 1)
+            results.append(data)
+
+        conn.close()
+        return results
+
+    def update_preacher(
+        self,
+        preacher_id: int,
+        name: Optional[str] = None,
+        aliases: Optional[List[str]] = None,
+        title: Optional[str] = None,
+        primary_church: Optional[str] = None,
+        bio: Optional[str] = None
+    ) -> bool:
+        """Update a preacher's information."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        updates = []
+        params = []
+
+        if name is not None:
+            updates.append("name = ?")
+            params.append(name)
+        if aliases is not None:
+            updates.append("aliases = ?")
+            params.append(json.dumps(aliases))
+        if title is not None:
+            updates.append("title = ?")
+            params.append(title)
+        if primary_church is not None:
+            updates.append("primary_church = ?")
+            params.append(primary_church)
+        if bio is not None:
+            updates.append("bio = ?")
+            params.append(bio)
+
+        if not updates:
+            return False
+
+        updates.append("updated_at = ?")
+        params.append(datetime.now().isoformat())
+        params.append(preacher_id)
+
+        cursor.execute(
+            f"UPDATE preachers SET {', '.join(updates)} WHERE id = ?",
+            params
+        )
+
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+        return affected > 0
+
+    def delete_preacher(self, preacher_id: int) -> bool:
+        """
+        Soft delete a preacher (set is_active = 0).
+        Does not delete associated videos or photos.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE preachers SET is_active = 0, updated_at = ? WHERE id = ?",
+            (datetime.now().isoformat(), preacher_id)
+        )
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+        return affected > 0
+
+    # =========================================================================
+    # PREACHER FACE REFERENCE OPERATIONS
+    # =========================================================================
+
+    def add_face_reference(
+        self,
+        preacher_id: int,
+        file_path: str,
+        original_filename: str,
+        file_size: int
+    ) -> int:
+        """
+        Add a face reference photo for a preacher.
+
+        Returns:
+            The ID of the created reference
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO preacher_face_references
+            (preacher_id, file_path, original_filename, file_size, uploaded_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            preacher_id,
+            file_path,
+            original_filename,
+            file_size,
+            datetime.now().isoformat()
+        ))
+
+        conn.commit()
+        ref_id = cursor.lastrowid
+        conn.close()
+        return ref_id
+
+    def get_face_references(self, preacher_id: int) -> List[Dict[str, Any]]:
+        """Get all face reference photos for a preacher."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT * FROM preacher_face_references
+            WHERE preacher_id = ?
+            ORDER BY uploaded_at DESC
+        """, (preacher_id,))
+
+        results = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return results
+
+    def delete_face_reference(self, reference_id: int) -> bool:
+        """Delete a face reference photo record."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Get the file path before deleting
+        cursor.execute(
+            "SELECT file_path FROM preacher_face_references WHERE id = ?",
+            (reference_id,)
+        )
+        row = cursor.fetchone()
+
+        if row:
+            # Delete the record
+            cursor.execute(
+                "DELETE FROM preacher_face_references WHERE id = ?",
+                (reference_id,)
+            )
+            conn.commit()
+            affected = cursor.rowcount
+
+            # Delete the actual file
+            if row["file_path"] and os.path.exists(row["file_path"]):
+                try:
+                    os.remove(row["file_path"])
+                except Exception as e:
+                    print(f"Warning: Could not delete file {row['file_path']}: {e}")
+
+            conn.close()
+            return affected > 0
+
+        conn.close()
+        return False
+
+    def get_face_reference_count(self, preacher_id: int) -> int:
+        """Get count of face reference photos for a preacher."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COUNT(*) as count FROM preacher_face_references WHERE preacher_id = ?",
+            (preacher_id,)
+        )
+        result = cursor.fetchone()["count"]
+        conn.close()
+        return result
+
+    # =========================================================================
+    # PREACHER-FILTERED VIDEO QUERIES
+    # =========================================================================
+
+    def get_videos_by_preacher(
+        self,
+        preacher_id: int,
+        limit: int = 100,
+        content_types: Optional[List[str]] = None
+    ) -> pd.DataFrame:
+        """
+        Get videos for a specific preacher.
+
+        Args:
+            preacher_id: The preacher's ID
+            limit: Maximum number of videos to return
+            content_types: Filter by content types (default: PREACHING, UNKNOWN)
+
+        Returns:
+            DataFrame with video data
+        """
+        if content_types is None:
+            content_types = ['PREACHING', 'UNKNOWN']
+
+        conn = self._get_connection()
+        placeholders = ','.join('?' * len(content_types))
+
+        df = pd.read_sql_query(
+            f"""SELECT * FROM videos
+               WHERE preacher_id = ?
+               AND content_type IN ({placeholders})
+               ORDER BY upload_date DESC
+               LIMIT ?""",
+            conn,
+            params=[preacher_id] + content_types + [limit]
+        )
+        conn.close()
+        return df
+
+    def get_statistics_for_preacher(self, preacher_id: int) -> Dict[str, Any]:
+        """Get comprehensive statistics for a specific preacher."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        stats = {"preacher_id": preacher_id}
+
+        # Total videos
+        cursor.execute(
+            "SELECT COUNT(*) as count FROM videos WHERE preacher_id = ?",
+            (preacher_id,)
+        )
+        stats["total_videos"] = cursor.fetchone()["count"]
+
+        # By content type
+        cursor.execute("""
+            SELECT content_type, COUNT(*) as count
+            FROM videos WHERE preacher_id = ?
+            GROUP BY content_type
+        """, (preacher_id,))
+        stats["by_content_type"] = {
+            row["content_type"]: row["count"] for row in cursor.fetchall()
+        }
+
+        # By language
+        cursor.execute("""
+            SELECT language_detected, COUNT(*) as count
+            FROM videos WHERE preacher_id = ?
+            GROUP BY language_detected
+        """, (preacher_id,))
+        stats["by_language"] = {
+            row["language_detected"]: row["count"] for row in cursor.fetchall()
+        }
+
+        # Needs review count
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM videos
+            WHERE preacher_id = ? AND needs_review = 1
+        """, (preacher_id,))
+        stats["needs_review"] = cursor.fetchone()["count"]
+
+        # Unique channels
+        cursor.execute("""
+            SELECT COUNT(DISTINCT channel_name) as count
+            FROM videos WHERE preacher_id = ?
+        """, (preacher_id,))
+        stats["unique_channels"] = cursor.fetchone()["count"]
+
+        # Date range
+        cursor.execute("""
+            SELECT MIN(upload_date) as oldest, MAX(upload_date) as newest
+            FROM videos
+            WHERE preacher_id = ? AND upload_date IS NOT NULL
+        """, (preacher_id,))
+        row = cursor.fetchone()
+        stats["oldest_video"] = row["oldest"]
+        stats["newest_video"] = row["newest"]
+
+        # Total hours
+        cursor.execute("""
+            SELECT COALESCE(SUM(duration) / 3600.0, 0) as hours
+            FROM videos
+            WHERE preacher_id = ?
+            AND content_type IN ('PREACHING', 'UNKNOWN')
+            AND duration IS NOT NULL
+        """, (preacher_id,))
+        stats["total_hours"] = round(cursor.fetchone()["hours"], 1)
+
+        # Top channels
+        cursor.execute("""
+            SELECT channel_name, COUNT(*) as count
+            FROM videos
+            WHERE preacher_id = ?
+            AND content_type IN ('PREACHING', 'UNKNOWN')
+            GROUP BY channel_name
+            ORDER BY count DESC
+            LIMIT 10
+        """, (preacher_id,))
+        stats["top_channels"] = [
+            {"name": row["channel_name"], "count": row["count"]}
+            for row in cursor.fetchall()
+        ]
+
+        # By platform
+        cursor.execute("""
+            SELECT COALESCE(platform, 'youtube') as platform, COUNT(*) as count
+            FROM videos
+            WHERE preacher_id = ?
+            AND content_type IN ('PREACHING', 'UNKNOWN')
+            GROUP BY COALESCE(platform, 'youtube')
+        """, (preacher_id,))
+        stats["by_platform"] = {
+            row["platform"]: row["count"] for row in cursor.fetchall()
+        }
+
+        conn.close()
+        return stats
+
+    def get_video_count_by_preacher(self, preacher_id: int) -> int:
+        """Get count of videos for a specific preacher."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM videos
+            WHERE preacher_id = ?
+            AND content_type IN ('PREACHING', 'UNKNOWN')
+        """, (preacher_id,))
+        result = cursor.fetchone()["count"]
+        conn.close()
+        return result
+
+    def get_preaching_hours_by_preacher(self, preacher_id: int) -> float:
+        """Get total preaching hours for a specific preacher."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT COALESCE(SUM(duration) / 3600.0, 0) as hours
+            FROM videos
+            WHERE preacher_id = ?
+            AND content_type IN ('PREACHING', 'UNKNOWN')
+            AND duration IS NOT NULL
+        """, (preacher_id,))
+        result = cursor.fetchone()["hours"]
+        conn.close()
+        return round(result, 1)
+
+    def update_video_preacher(self, video_id: str, preacher_id: int) -> bool:
+        """Assign a video to a preacher."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE videos SET preacher_id = ? WHERE video_id = ?",
+            (preacher_id, video_id)
+        )
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+        return affected > 0
+
+    def get_recent_videos_by_preacher(
+        self,
+        preacher_id: int,
+        limit: int = 6
+    ) -> List[Dict[str, Any]]:
+        """Get recent videos for a preacher as a list of dicts."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT video_id, title, thumbnail_url, duration, upload_date,
+                   channel_name, video_url, view_count, platform
+            FROM videos
+            WHERE preacher_id = ?
+            AND content_type IN ('PREACHING', 'UNKNOWN')
+            ORDER BY upload_date DESC
+            LIMIT ?
+        """, (preacher_id, limit))
+
+        results = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return results
 
 
 # Convenience functions for quick access

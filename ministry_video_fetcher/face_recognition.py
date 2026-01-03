@@ -541,20 +541,87 @@ class FaceRecognizer:
         }
 
 
-# Singleton instance for reuse
-_recognizer_instance: Optional[FaceRecognizer] = None
+# Dictionary of recognizer instances per preacher
+_recognizer_instances: dict = {}
 
 
-def get_face_recognizer(config: dict = None, photos_dir: str = "photos") -> FaceRecognizer:
-    """Get or create the face recognizer singleton."""
-    global _recognizer_instance
-    if _recognizer_instance is None:
-        _recognizer_instance = FaceRecognizer(config, photos_dir)
-    return _recognizer_instance
+def get_face_recognizer(
+    preacher_id: Optional[int] = None,
+    config: dict = None,
+    photos_dir: str = None
+) -> FaceRecognizer:
+    """
+    Get or create a face recognizer for a specific preacher.
+
+    Args:
+        preacher_id: ID of the preacher (uses preacher-specific photos directory)
+        config: Optional configuration override
+        photos_dir: Optional explicit photos directory (overrides preacher_id logic)
+
+    Returns:
+        FaceRecognizer instance for the specified preacher
+    """
+    global _recognizer_instances
+
+    # Determine photos directory
+    if photos_dir is None:
+        if preacher_id is not None:
+            # Use preacher-specific directory
+            from config import get_photos_directory
+            photos_dir = get_photos_directory(preacher_id)
+        else:
+            # Legacy fallback - use default photos directory
+            photos_dir = "photos"
+
+    # Create cache key
+    cache_key = f"preacher_{preacher_id}" if preacher_id else photos_dir
+
+    # Return cached instance if available
+    if cache_key in _recognizer_instances:
+        return _recognizer_instances[cache_key]
+
+    # Create new instance
+    instance = FaceRecognizer(config, photos_dir)
+    _recognizer_instances[cache_key] = instance
+
+    return instance
 
 
-def verify_face_in_video(video_url: str, thumbnail_url: str = None,
-                         use_frames: bool = True) -> FaceResult:
-    """Convenience function to verify a face in a video."""
-    recognizer = get_face_recognizer()
+def clear_face_recognizer_cache(preacher_id: Optional[int] = None):
+    """
+    Clear cached face recognizer instances.
+
+    Args:
+        preacher_id: If specified, only clear cache for this preacher.
+                     If None, clear all caches.
+    """
+    global _recognizer_instances
+
+    if preacher_id is not None:
+        cache_key = f"preacher_{preacher_id}"
+        if cache_key in _recognizer_instances:
+            del _recognizer_instances[cache_key]
+    else:
+        _recognizer_instances.clear()
+
+
+def verify_face_in_video(
+    video_url: str,
+    thumbnail_url: str = None,
+    use_frames: bool = True,
+    preacher_id: Optional[int] = None
+) -> FaceResult:
+    """
+    Convenience function to verify a face in a video.
+
+    Args:
+        video_url: URL of the video
+        thumbnail_url: URL of the thumbnail (optional)
+        use_frames: Whether to extract video frames if thumbnail fails
+        preacher_id: ID of the preacher to verify against
+
+    Returns:
+        FaceResult with verification status
+    """
+    recognizer = get_face_recognizer(preacher_id=preacher_id)
     return recognizer.verify_face(video_url, thumbnail_url, use_frames)

@@ -1,7 +1,8 @@
 """
 Video Fetcher for Ministry Video Fetcher
 
-Uses yt-dlp to fetch video metadata from YouTube searches and channels.
+Uses yt-dlp to fetch video metadata from YouTube and Facebook.
+Supports multi-preacher fetching with dynamic search queries.
 """
 
 import time
@@ -14,8 +15,8 @@ try:
 except ImportError:
     raise ImportError("yt-dlp is required. Install with: pip install yt-dlp")
 
-from models import VideoMetadata, FetchLog, FetchSummary, ContentType
-from classifier import ContentClassifier
+from models import VideoMetadata, FetchLog, FetchSummary, ContentType, Preacher
+from classifier import ContentClassifier, get_classifier_for_preacher
 from database import Database
 from config import (
     SEARCH_QUERIES,
@@ -24,6 +25,12 @@ from config import (
     FETCHER_CONFIG,
     STORAGE_CONFIG,
     IDENTITY_MARKERS,
+    FACEBOOK_PAGES,
+    FACEBOOK_SEARCH_QUERIES,
+    FACEBOOK_FETCHER_CONFIG,
+    PLATFORM_YOUTUBE,
+    PLATFORM_FACEBOOK,
+    generate_search_queries,
 )
 
 # Configure logging
@@ -39,18 +46,50 @@ class VideoFetcher:
     Fetches video metadata from YouTube using yt-dlp.
 
     Supports both search queries and channel scraping.
+    Supports multi-preacher fetching with dynamic search queries.
     """
 
-    def __init__(self, db: Optional[Database] = None):
+    def __init__(
+        self,
+        db: Optional[Database] = None,
+        preacher_id: Optional[int] = None,
+        preacher: Optional[Preacher] = None
+    ):
         """
         Initialize the fetcher.
 
         Args:
             db: Database instance. Creates new one if None.
+            preacher_id: ID of the preacher for preacher-specific fetching
+            preacher: Preacher object (alternative to preacher_id)
         """
         self.db = db or Database()
-        self.classifier = ContentClassifier()
+        self.preacher_id = preacher_id
+        self.preacher = preacher
         self.config = FETCHER_CONFIG
+
+        # Load preacher from database if only ID provided
+        if preacher_id and not preacher:
+            preacher_data = self.db.get_preacher(preacher_id)
+            if preacher_data:
+                self.preacher = Preacher.from_dict(preacher_data)
+
+        # Create preacher-aware classifier
+        if self.preacher_id:
+            self.classifier = get_classifier_for_preacher(self.preacher_id)
+        else:
+            self.classifier = ContentClassifier()
+
+        # Generate dynamic search queries if preacher is set
+        self._youtube_queries: List[str] = []
+        self._facebook_queries: List[str] = []
+        if self.preacher:
+            self._youtube_queries = self.preacher.get_search_queries(platform="youtube")
+            self._facebook_queries = self.preacher.get_search_queries(platform="facebook")
+        else:
+            # Legacy hardcoded queries
+            self._youtube_queries = SEARCH_QUERIES
+            self._facebook_queries = FACEBOOK_SEARCH_QUERIES
 
         # Track seen video IDs to avoid duplicate processing
         self._seen_ids: Set[str] = set()
@@ -68,8 +107,8 @@ class VideoFetcher:
         """
         Run complete fetch from all sources.
 
-        1. Fetches from primary channel
-        2. Runs all search queries
+        1. Fetches from primary channel (if not using preacher-specific mode)
+        2. Runs all search queries (dynamic or legacy)
         3. Deduplicates and classifies
         4. Stores results in database
 
@@ -79,22 +118,26 @@ class VideoFetcher:
         summary = FetchSummary()
         self._seen_ids.clear()
 
-        # Fetch from primary channel first
-        logger.info(f"Fetching from primary channel: {PRIMARY_CHANNEL['name']}")
-        channel_videos = self._fetch_channel(PRIMARY_CHANNEL["url"])
-        summary.total_videos_found += len(channel_videos)
+        preacher_name = self.preacher.name if self.preacher else "Legacy Mode"
+        logger.info(f"Starting YouTube fetch for: {preacher_name}")
 
-        # Process channel videos
-        channel_results = self._process_videos(
-            channel_videos, f"channel:{PRIMARY_CHANNEL['name']}"
-        )
-        summary.new_videos_added += channel_results["added"]
-        summary.music_excluded += channel_results["music_excluded"]
-        summary.low_confidence_excluded += channel_results.get("low_confidence_excluded", 0)
-        summary.unknown_channel_rejected += channel_results.get("unknown_channel_rejected", 0)
+        # Fetch from primary channel (only in legacy mode)
+        if not self.preacher_id:
+            logger.info(f"Fetching from primary channel: {PRIMARY_CHANNEL['name']}")
+            channel_videos = self._fetch_channel(PRIMARY_CHANNEL["url"])
+            summary.total_videos_found += len(channel_videos)
 
-        # Run search queries
-        for query in SEARCH_QUERIES:
+            # Process channel videos
+            channel_results = self._process_videos(
+                channel_videos, f"channel:{PRIMARY_CHANNEL['name']}"
+            )
+            summary.new_videos_added += channel_results["added"]
+            summary.music_excluded += channel_results["music_excluded"]
+            summary.low_confidence_excluded += channel_results.get("low_confidence_excluded", 0)
+            summary.unknown_channel_rejected += channel_results.get("unknown_channel_rejected", 0)
+
+        # Run search queries (dynamic or legacy)
+        for query in self._youtube_queries:
             logger.info(f"Searching: '{query}'...")
             try:
                 search_videos = self._fetch_search(query)
@@ -219,7 +262,9 @@ class VideoFetcher:
                         if entry is None:
                             continue
 
-                        video = VideoMetadata.from_ytdlp(entry, query)
+                        video = VideoMetadata.from_ytdlp(
+                            entry, query, preacher_id=self.preacher_id
+                        )
                         if video.video_id:
                             videos.append(video)
                             self._seen_ids.add(video.video_id)
@@ -247,7 +292,9 @@ class VideoFetcher:
                 url = f"https://www.youtube.com/watch?v={video_id}"
                 info = ydl.extract_info(url, download=False)
                 if info:
-                    return VideoMetadata.from_ytdlp(info)
+                    return VideoMetadata.from_ytdlp(
+                        info, preacher_id=self.preacher_id
+                    )
         except Exception as e:
             logger.debug(f"Error getting details for {video_id}: {e}")
 
@@ -364,7 +411,7 @@ class VideoFetcher:
         Fetch and classify a single video by URL.
 
         Args:
-            video_url: Full YouTube video URL
+            video_url: Full video URL (YouTube or Facebook)
 
         Returns:
             Classified VideoMetadata or None
@@ -383,10 +430,304 @@ class VideoFetcher:
 
         return None
 
+    # =========================================================================
+    # FACEBOOK FETCHING METHODS
+    # =========================================================================
+
+    def fetch_facebook(self) -> FetchSummary:
+        """
+        Run complete fetch from all Facebook sources.
+
+        1. Fetches from configured Facebook pages (only in legacy mode)
+        2. Runs Facebook search queries (dynamic or legacy)
+        3. Uses face recognition to verify preacher's presence
+        4. Stores results in database
+
+        Returns:
+            FetchSummary with statistics
+        """
+        summary = FetchSummary()
+        self._seen_ids.clear()
+
+        preacher_name = self.preacher.name if self.preacher else "Legacy Mode"
+        logger.info(f"Starting Facebook fetch for: {preacher_name}")
+
+        # Get Facebook-specific settings
+        fb_config = FACEBOOK_FETCHER_CONFIG
+        request_delay = fb_config.get("request_delay", 3.0)
+
+        # Fetch from Facebook pages (only in legacy mode)
+        if not self.preacher_id:
+            for page in FACEBOOK_PAGES:
+                logger.info(f"Fetching Facebook page: {page['name']}")
+                try:
+                    page_videos = self._fetch_facebook_page(page["url"])
+                    summary.total_videos_found += len(page_videos)
+
+                    # Process page videos
+                    results = self._process_videos(
+                        page_videos, f"facebook_page:{page['name']}"
+                    )
+                    summary.new_videos_added += results["added"]
+                    summary.music_excluded += results["music_excluded"]
+                    summary.low_confidence_excluded += results.get("low_confidence_excluded", 0)
+                    summary.unknown_channel_rejected += results.get("unknown_channel_rejected", 0)
+
+                    logger.info(
+                        f"  Found {len(page_videos)} videos, "
+                        f"{results['added']} added"
+                    )
+
+                    time.sleep(request_delay)
+
+                except Exception as e:
+                    error_msg = f"Error fetching Facebook page {page['name']}: {str(e)}"
+                    logger.error(error_msg)
+                    summary.errors.append(error_msg)
+
+        # Run Facebook search queries (dynamic or legacy)
+        for query in self._facebook_queries:
+            logger.info(f"Searching Facebook: '{query}'...")
+            try:
+                search_videos = self._fetch_facebook_search(query)
+                new_count = len([v for v in search_videos if v.video_id not in self._seen_ids])
+                dup_count = len(search_videos) - new_count
+
+                summary.total_videos_found += new_count
+                summary.duplicates_removed += dup_count
+
+                # Process search results
+                results = self._process_videos(search_videos, f"facebook_search:{query}")
+                summary.new_videos_added += results["added"]
+                summary.music_excluded += results["music_excluded"]
+                summary.low_confidence_excluded += results.get("low_confidence_excluded", 0)
+                summary.unknown_channel_rejected += results.get("unknown_channel_rejected", 0)
+
+                if results["errors"]:
+                    summary.errors.extend(results["errors"])
+
+                logger.info(
+                    f"  Found {len(search_videos)} videos, "
+                    f"{new_count} new, {dup_count} duplicates, "
+                    f"{results['added']} added"
+                )
+
+                time.sleep(request_delay)
+
+            except Exception as e:
+                error_msg = f"Error searching Facebook '{query}': {str(e)}"
+                logger.error(error_msg)
+                summary.errors.append(error_msg)
+
+        # Get final statistics
+        summary.total_in_database = self.db.get_video_count()
+        summary.videos_needing_review = self.db.get_review_count()
+        summary.unique_channels = self.db.get_unique_channels_count()
+        summary.total_preaching_hours = self.db.get_total_preaching_hours()
+        summary.top_channels = self.db.get_channel_breakdown()[:5]
+
+        oldest, newest = self.db.get_date_range()
+        summary.oldest_video_date = self._format_date(oldest)
+        summary.newest_video_date = self._format_date(newest)
+
+        return summary
+
+    def _fetch_facebook_page(self, page_url: str) -> List[VideoMetadata]:
+        """
+        Fetch all videos from a Facebook page.
+
+        Args:
+            page_url: URL to the Facebook page videos (e.g., facebook.com/page/videos)
+
+        Returns:
+            List of VideoMetadata objects
+        """
+        videos = []
+        opts = self._ydl_opts.copy()
+
+        # Facebook-specific options
+        fb_config = FACEBOOK_FETCHER_CONFIG
+        opts["extract_flat"] = "in_playlist"
+        opts["playlistend"] = fb_config.get("max_results_per_query", 50)
+
+        # Add cookies if configured
+        if fb_config.get("cookies_file"):
+            opts["cookiefile"] = fb_config["cookies_file"]
+
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                result = ydl.extract_info(page_url, download=False)
+
+                if result and "entries" in result:
+                    entries = list(result["entries"]) if result["entries"] else []
+                    logger.info(f"  Found {len(entries)} videos on Facebook page")
+
+                    for entry in entries:
+                        if entry is None:
+                            continue
+
+                        video_id = entry.get("id")
+                        if not video_id:
+                            continue
+
+                        # Get full video info
+                        video = self._get_facebook_video_details(video_id, entry)
+                        if video:
+                            video.search_query_used = f"facebook_page:{page_url}"
+                            videos.append(video)
+                            self._seen_ids.add(video_id)
+
+                        time.sleep(1.0)  # Rate limit
+
+        except Exception as e:
+            logger.error(f"Error fetching Facebook page {page_url}: {e}")
+
+        return videos
+
+    def _fetch_facebook_search(self, query: str) -> List[VideoMetadata]:
+        """
+        Search Facebook for videos matching query.
+
+        Note: Facebook search via yt-dlp is limited compared to YouTube.
+        This uses the fb:// protocol handler if available.
+
+        Args:
+            query: Search query string
+
+        Returns:
+            List of VideoMetadata objects
+        """
+        videos = []
+        opts = self._ydl_opts.copy()
+
+        # Facebook-specific options
+        fb_config = FACEBOOK_FETCHER_CONFIG
+        if fb_config.get("cookies_file"):
+            opts["cookiefile"] = fb_config["cookies_file"]
+
+        try:
+            # Use Facebook search URL format
+            # Note: This may have limited results without authentication
+            search_url = f"https://www.facebook.com/search/videos?q={query.replace(' ', '%20')}"
+
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                result = ydl.extract_info(search_url, download=False)
+
+                if result and "entries" in result:
+                    for entry in result.get("entries", []):
+                        if entry is None:
+                            continue
+
+                        video = VideoMetadata.from_ytdlp(
+                            entry, f"facebook_search:{query}",
+                            preacher_id=self.preacher_id
+                        )
+                        if video.video_id:
+                            videos.append(video)
+                            self._seen_ids.add(video.video_id)
+
+        except Exception as e:
+            # Facebook search often fails without proper auth
+            logger.warning(f"Facebook search for '{query}' failed (this is expected without cookies): {e}")
+
+        return videos
+
+    def _get_facebook_video_details(
+        self, video_id: str, entry: Optional[Dict] = None
+    ) -> Optional[VideoMetadata]:
+        """
+        Get full details for a specific Facebook video.
+
+        Args:
+            video_id: Facebook video ID
+            entry: Optional pre-fetched entry data
+
+        Returns:
+            VideoMetadata or None if error
+        """
+        opts = self._ydl_opts.copy()
+        opts["extract_flat"] = False
+
+        # Add cookies if configured
+        fb_config = FACEBOOK_FETCHER_CONFIG
+        if fb_config.get("cookies_file"):
+            opts["cookiefile"] = fb_config["cookies_file"]
+
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                # Try to construct Facebook video URL
+                url = f"https://www.facebook.com/watch?v={video_id}"
+
+                # If we have entry data with a URL, use that instead
+                if entry and entry.get("url"):
+                    url = entry["url"]
+                elif entry and entry.get("webpage_url"):
+                    url = entry["webpage_url"]
+
+                info = ydl.extract_info(url, download=False)
+                if info:
+                    return VideoMetadata.from_ytdlp(
+                        info, preacher_id=self.preacher_id
+                    )
+
+        except Exception as e:
+            logger.debug(f"Error getting Facebook video details for {video_id}: {e}")
+
+        # If full fetch fails, try to create from entry data
+        if entry:
+            try:
+                return VideoMetadata.from_ytdlp(
+                    entry, preacher_id=self.preacher_id
+                )
+            except Exception:
+                pass
+
+        return None
+
+    def fetch_all_platforms(self) -> FetchSummary:
+        """
+        Run complete fetch from all platforms (YouTube and Facebook).
+
+        Returns:
+            Combined FetchSummary with statistics from all platforms
+        """
+        logger.info("=" * 60)
+        logger.info("FETCHING FROM ALL PLATFORMS")
+        logger.info("=" * 60)
+
+        # Fetch from YouTube
+        logger.info("\n--- YOUTUBE ---")
+        youtube_summary = self.fetch_all()
+
+        # Fetch from Facebook
+        logger.info("\n--- FACEBOOK ---")
+        facebook_summary = self.fetch_facebook()
+
+        # Combine summaries
+        combined = FetchSummary()
+        combined.total_videos_found = youtube_summary.total_videos_found + facebook_summary.total_videos_found
+        combined.duplicates_removed = youtube_summary.duplicates_removed + facebook_summary.duplicates_removed
+        combined.music_excluded = youtube_summary.music_excluded + facebook_summary.music_excluded
+        combined.low_confidence_excluded = youtube_summary.low_confidence_excluded + facebook_summary.low_confidence_excluded
+        combined.unknown_channel_rejected = youtube_summary.unknown_channel_rejected + facebook_summary.unknown_channel_rejected
+        combined.new_videos_added = youtube_summary.new_videos_added + facebook_summary.new_videos_added
+
+        # Use latest database stats
+        combined.total_in_database = facebook_summary.total_in_database
+        combined.videos_needing_review = facebook_summary.videos_needing_review
+        combined.unique_channels = facebook_summary.unique_channels
+        combined.total_preaching_hours = facebook_summary.total_preaching_hours
+        combined.top_channels = facebook_summary.top_channels
+        combined.oldest_video_date = facebook_summary.oldest_video_date
+        combined.newest_video_date = facebook_summary.newest_video_date
+        combined.errors = youtube_summary.errors + facebook_summary.errors
+
+        return combined
+
 
 def run_fetch(db_path: Optional[str] = None) -> FetchSummary:
     """
-    Convenience function to run a complete fetch.
+    Convenience function to run a complete fetch (legacy mode).
 
     Args:
         db_path: Optional database path
@@ -397,3 +738,46 @@ def run_fetch(db_path: Optional[str] = None) -> FetchSummary:
     db = Database(db_path) if db_path else Database()
     fetcher = VideoFetcher(db)
     return fetcher.fetch_all()
+
+
+def run_fetch_for_preacher(
+    preacher_id: int,
+    platform: str = "youtube",
+    db_path: Optional[str] = None
+) -> FetchSummary:
+    """
+    Run a fetch for a specific preacher.
+
+    Args:
+        preacher_id: ID of the preacher to fetch for
+        platform: 'youtube', 'facebook', or 'all'
+        db_path: Optional database path
+
+    Returns:
+        FetchSummary with results
+    """
+    db = Database(db_path) if db_path else Database()
+    fetcher = VideoFetcher(db, preacher_id=preacher_id)
+
+    if platform == "youtube":
+        return fetcher.fetch_all()
+    elif platform == "facebook":
+        return fetcher.fetch_facebook()
+    elif platform == "all":
+        return fetcher.fetch_all_platforms()
+    else:
+        raise ValueError(f"Invalid platform: {platform}")
+
+
+def get_fetcher_for_preacher(preacher_id: int, db: Optional[Database] = None) -> VideoFetcher:
+    """
+    Get a VideoFetcher configured for a specific preacher.
+
+    Args:
+        preacher_id: ID of the preacher
+        db: Optional Database instance
+
+    Returns:
+        VideoFetcher instance configured for the preacher
+    """
+    return VideoFetcher(db=db, preacher_id=preacher_id)

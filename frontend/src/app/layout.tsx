@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import Sidebar from "@/components/layout/Sidebar";
+import ConditionalLayout from "@/components/layout/ConditionalLayout";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Ministry Analytics Platform",
-  description: "Sermon tracking and analytics for Apostle Narcisse Majila",
+  description: "Multi-preacher sermon tracking and analytics platform with AI face recognition",
 };
 
 export default function RootLayout({
@@ -18,15 +18,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <div className="flex min-h-screen">
-          {/* Sidebar */}
-          <Sidebar />
-
-          {/* Main Content */}
-          <main className="ml-64 flex-1">
-            {children}
-          </main>
-        </div>
+        <ConditionalLayout>
+          {children}
+        </ConditionalLayout>
       </body>
     </html>
   );

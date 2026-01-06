@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: ministry-api
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r ministry_video_fetcher/requirements-render.txt
+    startCommand: cd ministry_video_fetcher && uvicorn api:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0

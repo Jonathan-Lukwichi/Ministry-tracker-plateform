@@ -16,6 +16,7 @@ interface KPICardProps {
 export default function KPICard({
   title,
   value,
+  description,
   trend,
   trendLabel = "vs last year",
   icon,

@@ -588,11 +588,16 @@ class VideoFetcher:
         """
         Search Facebook for videos matching query.
 
-        Note: Facebook search via yt-dlp is limited compared to YouTube.
-        This uses the fb:// protocol handler if available.
+        Uses multiple search strategies for better results:
+        1. Facebook Watch search (recommended)
+        2. Facebook video search URL
+        3. Facebook page search for video content
+
+        Note: Facebook requires authentication (cookies) for best results.
+        Without cookies, results will be limited.
 
         Args:
-            query: Search query string
+            query: Search query string (supports English and French)
 
         Returns:
             List of VideoMetadata objects
@@ -602,33 +607,80 @@ class VideoFetcher:
 
         # Facebook-specific options
         fb_config = FACEBOOK_FETCHER_CONFIG
-        if fb_config.get("cookies_file"):
-            opts["cookiefile"] = fb_config["cookies_file"]
+        cookies_file = fb_config.get("cookies_file")
 
-        try:
-            # Use Facebook search URL format
-            # Note: This may have limited results without authentication
-            search_url = f"https://www.facebook.com/search/videos?q={query.replace(' ', '%20')}"
+        # Check for cookies file and warn if missing
+        if cookies_file:
+            import os
+            if os.path.exists(cookies_file):
+                opts["cookiefile"] = cookies_file
+                logger.info(f"Using Facebook cookies from: {cookies_file}")
+            else:
+                logger.warning(
+                    f"Facebook cookies file not found: {cookies_file}\n"
+                    "  To enable Facebook search:\n"
+                    "  1. Install 'Get cookies.txt LOCALLY' browser extension\n"
+                    "  2. Log in to Facebook\n"
+                    "  3. Export cookies to 'facebook_cookies.txt'\n"
+                    "  4. Place file in ministry_video_fetcher directory"
+                )
 
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                result = ydl.extract_info(search_url, download=False)
+        # URL encode the query properly (handle French accents)
+        import urllib.parse
+        encoded_query = urllib.parse.quote(query, safe='')
 
-                if result and "entries" in result:
-                    for entry in result.get("entries", []):
-                        if entry is None:
-                            continue
+        # List of search URLs to try (in order of preference)
+        search_urls = [
+            # Facebook Watch search (best for video content)
+            f"https://www.facebook.com/watch/search/?q={encoded_query}",
+            # Facebook video search
+            f"https://www.facebook.com/search/videos?q={encoded_query}",
+            # Alternative: search all with video filter
+            f"https://www.facebook.com/search/posts?q={encoded_query}&filters=video",
+        ]
 
-                        video = VideoMetadata.from_ytdlp(
-                            entry, f"facebook_search:{query}",
-                            preacher_id=self.preacher_id
-                        )
-                        if video.video_id:
-                            videos.append(video)
-                            self._seen_ids.add(video.video_id)
+        for search_url in search_urls:
+            try:
+                logger.debug(f"Trying Facebook search URL: {search_url}")
 
-        except Exception as e:
-            # Facebook search often fails without proper auth
-            logger.warning(f"Facebook search for '{query}' failed (this is expected without cookies): {e}")
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    result = ydl.extract_info(search_url, download=False)
+
+                    if result and "entries" in result:
+                        entries = list(result.get("entries", []) or [])
+
+                        for entry in entries:
+                            if entry is None:
+                                continue
+
+                            video = VideoMetadata.from_ytdlp(
+                                entry, f"facebook_search:{query}",
+                                preacher_id=self.preacher_id
+                            )
+                            if video.video_id and video.video_id not in self._seen_ids:
+                                # Set platform to facebook
+                                video.platform = PLATFORM_FACEBOOK
+                                videos.append(video)
+                                self._seen_ids.add(video.video_id)
+
+                        if videos:
+                            logger.info(f"Found {len(videos)} videos from Facebook search: '{query}'")
+                            break  # Found videos, no need to try other URLs
+
+            except Exception as e:
+                error_str = str(e).lower()
+                # Check for specific auth-related errors
+                if "login" in error_str or "cookie" in error_str or "auth" in error_str:
+                    logger.warning(f"Facebook search requires authentication for '{query}'")
+                elif "rate" in error_str or "limit" in error_str:
+                    logger.warning(f"Facebook rate limit hit, waiting before retry...")
+                    time.sleep(5.0)  # Extra delay on rate limit
+                else:
+                    logger.debug(f"Facebook search URL failed for '{query}': {e}")
+                continue
+
+        if not videos:
+            logger.info(f"No videos found from Facebook search: '{query}' (this may require cookies)")
 
         return videos
 

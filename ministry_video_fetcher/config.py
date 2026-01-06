@@ -58,31 +58,84 @@ FACEBOOK_PAGES: List[Dict] = [
 # =============================================================================
 
 FACEBOOK_SEARCH_QUERIES: List[str] = [
-    # Exact name matches with titles
+    # === EXACT NAME MATCHES WITH TITLES ===
+    # English titles
     "Apostle Narcisse Majila",
+    "Pastor Narcisse Majila",
+    "Prophet Narcisse Majila",
+    "Bishop Narcisse Majila",
+    "Reverend Narcisse Majila",
+
+    # French titles (with and without accents)
     "Apotre Narcisse Majila",
     "Apôtre Narcisse Majila",
     "Pasteur Narcisse Majila",
-    "Pastor Narcisse Majila",
+    "Prophète Narcisse Majila",
+    "Prophete Narcisse Majila",
+    "Évêque Narcisse Majila",
+    "Eveque Narcisse Majila",
 
-    # Name only
+    # === NAME ONLY (various spellings) ===
     "Narcisse Majila",
-    "Naricisse Majila",
+    "Naricisse Majila",  # Common misspelling
+    "Narcis Majila",
+    "N. Majila",
 
-    # French combinations
+    # === FRENCH COMBINATIONS (prédication/enseignement) ===
     "Narcisse Majila predication",
+    "Narcisse Majila prédication",
     "Narcisse Majila enseignement",
     "Narcisse Majila message",
     "Narcisse Majila culte",
+    "Narcisse Majila parole",
+    "Narcisse Majila priere",
+    "Narcisse Majila prière",
+    "Narcisse Majila delivrance",
+    "Narcisse Majila délivrance",
+    "Narcisse Majila guerison",
+    "Narcisse Majila guérison",
+    "Narcisse Majila prophetie",
+    "Narcisse Majila prophétie",
+    "Narcisse Majila veillee",
+    "Narcisse Majila veillée",
 
-    # English combinations
+    # French with titles
+    "Apotre Majila predication",
+    "Apôtre Majila prédication",
+    "Pasteur Majila message",
+    "Pasteur Majila enseignement",
+
+    # === ENGLISH COMBINATIONS ===
     "Narcisse Majila sermon",
     "Narcisse Majila preaching",
     "Narcisse Majila teaching",
+    "Narcisse Majila message",
+    "Narcisse Majila prayer",
+    "Narcisse Majila deliverance",
+    "Narcisse Majila healing",
+    "Narcisse Majila prophecy",
+    "Narcisse Majila revival",
+    "Narcisse Majila crusade",
+    "Narcisse Majila conference",
 
-    # Church-related
+    # English with titles
+    "Apostle Majila sermon",
+    "Apostle Majila preaching",
+    "Pastor Majila message",
+
+    # === CHURCH-RELATED ===
     "Ramah Full Gospel Church Pretoria",
     "Ramah Church Pretoria Narcisse",
+    "Ramah Church Narcisse Majila",
+    "RFGC Pretoria Majila",
+    "Ramah FGC Narcisse",
+
+    # === EVENT-BASED QUERIES ===
+    "Narcisse Majila 2024",
+    "Narcisse Majila 2023",
+    "Narcisse Majila live",
+    "Narcisse Majila direct",
+    "Majila en direct",
 ]
 
 # =============================================================================

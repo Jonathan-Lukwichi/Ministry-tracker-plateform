@@ -736,6 +736,116 @@ class VideoFetcher:
 
         return None
 
+    def fetch_facebook_video_url(self, video_url: str) -> Optional[VideoMetadata]:
+        """
+        Fetch a single Facebook video by its URL.
+
+        This is more reliable than search as it directly accesses the video.
+        Supports various Facebook URL formats:
+        - https://www.facebook.com/watch?v=VIDEO_ID
+        - https://www.facebook.com/PAGE/videos/VIDEO_ID
+        - https://fb.watch/SHORT_CODE
+        - https://www.facebook.com/reel/VIDEO_ID
+
+        Args:
+            video_url: Full Facebook video URL
+
+        Returns:
+            VideoMetadata or None if error
+        """
+        opts = self._ydl_opts.copy()
+
+        # Add cookies if configured
+        fb_config = FACEBOOK_FETCHER_CONFIG
+        cookies_file = fb_config.get("cookies_file")
+        if cookies_file:
+            import os
+            if os.path.exists(cookies_file):
+                opts["cookiefile"] = cookies_file
+
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(video_url, download=False)
+                if info:
+                    video = VideoMetadata.from_ytdlp(
+                        info,
+                        f"facebook_direct:{video_url}",
+                        preacher_id=self.preacher_id
+                    )
+                    video.platform = PLATFORM_FACEBOOK
+
+                    # Process through classifier (includes face recognition)
+                    video = self.classifier.classify(video)
+
+                    logger.info(
+                        f"Fetched Facebook video: {video.video_id} "
+                        f"(face_verified: {video.face_verified}, "
+                        f"confidence: {video.confidence_score:.2f})"
+                    )
+
+                    return video
+
+        except Exception as e:
+            logger.error(f"Error fetching Facebook video {video_url}: {e}")
+
+        return None
+
+    def fetch_facebook_videos_from_urls(self, urls: List[str]) -> FetchSummary:
+        """
+        Fetch multiple Facebook videos from a list of URLs.
+
+        This is the most reliable method for fetching specific known videos.
+        Each video is processed through the classifier with face recognition.
+
+        Args:
+            urls: List of Facebook video URLs
+
+        Returns:
+            FetchSummary with statistics
+        """
+        summary = FetchSummary()
+
+        logger.info(f"Fetching {len(urls)} Facebook videos from URLs...")
+
+        for url in urls:
+            try:
+                # Check if already in database
+                video = self.fetch_facebook_video_url(url)
+
+                if video:
+                    summary.total_videos_found += 1
+
+                    if self.db.video_exists(video.video_id):
+                        summary.duplicates_removed += 1
+                        logger.info(f"Duplicate skipped: {video.video_id}")
+                        continue
+
+                    # Check content type
+                    if video.content_type == ContentType.MUSIC and video.confidence_score > 0.50:
+                        summary.music_excluded += 1
+                        continue
+
+                    # Store in database
+                    if self.db.insert_video(video):
+                        summary.new_videos_added += 1
+                        logger.info(f"Added: {video.video_id} - {video.title[:50]}...")
+
+                # Rate limiting
+                time.sleep(FACEBOOK_FETCHER_CONFIG.get("request_delay", 3.0))
+
+            except Exception as e:
+                error_msg = f"Error processing URL {url}: {str(e)}"
+                logger.error(error_msg)
+                summary.errors.append(error_msg)
+
+        # Get final statistics
+        summary.total_in_database = self.db.get_video_count()
+        summary.videos_needing_review = self.db.get_review_count()
+        summary.unique_channels = self.db.get_unique_channels_count()
+        summary.total_preaching_hours = self.db.get_total_preaching_hours()
+
+        return summary
+
     def fetch_all_platforms(self) -> FetchSummary:
         """
         Run complete fetch from all platforms (YouTube and Facebook).

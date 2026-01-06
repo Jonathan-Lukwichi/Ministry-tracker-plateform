@@ -352,15 +352,30 @@ function Step2Photos({
           <ArrowLeft className="h-5 w-5" />
           Back
         </button>
-        <button
-          onClick={onNext}
-          disabled={photos.length < 3}
-          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-6 py-3 font-semibold text-white transition-all hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Continue to Fetch
-          <ArrowRight className="h-5 w-5" />
-        </button>
+        {photos.length < 3 ? (
+          <button
+            onClick={onNext}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-slate-600 px-6 py-3 font-medium text-slate-300 transition-all hover:border-accent hover:text-accent"
+          >
+            Skip for Now
+            <ArrowRight className="h-5 w-5" />
+          </button>
+        ) : (
+          <button
+            onClick={onNext}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-6 py-3 font-semibold text-white transition-all hover:bg-accent/90"
+          >
+            Continue to Fetch
+            <ArrowRight className="h-5 w-5" />
+          </button>
+        )}
       </div>
+
+      {photos.length < 3 && (
+        <p className="text-center text-xs text-slate-500">
+          Face recognition works best with 3+ photos. You can add them later.
+        </p>
+      )}
     </div>
   );
 }

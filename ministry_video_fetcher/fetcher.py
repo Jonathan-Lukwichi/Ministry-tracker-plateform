@@ -338,8 +338,23 @@ class VideoFetcher:
                     results["skipped"] += 1
                     continue
 
+                # Log that we're applying classification (includes face recognition)
+                logger.debug(f"Classifying video: {video.video_id} - '{video.title[:50] if video.title else 'Unknown'}...'")
+
                 # Classify the video (applies identity check, face verification, etc.)
                 video = self.classifier.classify(video)
+
+                # Log face recognition result
+                if video.face_verified:
+                    logger.info(
+                        f"✓ Face verified for: {video.video_id} "
+                        f"(confidence: {video.confidence_score:.2f})"
+                    )
+                elif hasattr(video, 'identity_matched') and video.identity_matched:
+                    logger.debug(
+                        f"Identity matched (no face): {video.video_id} "
+                        f"(confidence: {video.confidence_score:.2f})"
+                    )
 
                 # --- STRICTER MUSIC FILTER ---
                 # Exclude music with confidence > 0.50 (lowered from 0.70)

@@ -202,9 +202,9 @@ function Step2Photos({
     for (const file of Array.from(files)) {
       try {
         const result = await api.uploadPreacherPhoto(preacherId, file);
-        if (result.success) {
+        if (result.success && result.id) {
           newPhotos.push({
-            id: result.id || result.filename,
+            id: parseInt(result.id, 10),
             filename: result.filename,
             preview: URL.createObjectURL(file),
           });

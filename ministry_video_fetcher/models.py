@@ -126,67 +126,28 @@ class Preacher:
         """
         Generate platform-specific search queries.
 
+        Uses the enhanced generate_search_queries function from config
+        which includes comprehensive bilingual support (English & French)
+        and handles name variations/aliases.
+
         Args:
             platform: 'youtube' or 'facebook'
 
         Returns:
             List of search queries optimized for the platform
         """
-        queries = []
-        name_parts = self.name.split()
-        last_name = name_parts[-1] if len(name_parts) > 1 else self.name
+        from config import generate_search_queries
 
-        if platform == "youtube":
-            # YouTube supports exact match with quotes
-            queries.append(f'"{self.name}"')
-            queries.append(f'"{self.name}" sermon')
-            queries.append(f'"{self.name}" preaching')
-            queries.append(f'"{self.name}" predication')
-            queries.append(f'"{self.name}" message')
-            queries.append(f'"{self.name}" enseignement')
+        # Use the enhanced query generator from config
+        queries = generate_search_queries(
+            name=self.name,
+            title=self.title,
+            primary_church=self.primary_church,
+            platform=platform,
+            include_aliases=self.aliases if self.aliases else None
+        )
 
-            if self.title:
-                queries.append(f'"{self.title} {self.name}"')
-                queries.append(f'"{self.title} {last_name}"')
-
-            # Add common title variations
-            for t in ["Apostle", "Apotre", "Pastor", "Pasteur"]:
-                queries.append(f'"{t} {self.name}"')
-                queries.append(f'"{t} {last_name}"')
-
-            if self.primary_church:
-                queries.append(f'"{self.primary_church}"')
-                queries.append(f'"{self.primary_church}" {last_name}')
-
-        else:  # Facebook
-            # Facebook search doesn't use quotes the same way
-            queries.append(self.name)
-            queries.append(f"{self.name} sermon")
-            queries.append(f"{self.name} preaching")
-            queries.append(f"{self.name} predication")
-            queries.append(f"{self.name} message")
-            queries.append(f"{self.name} enseignement")
-
-            if self.title:
-                queries.append(f"{self.title} {self.name}")
-                queries.append(f"{self.title} {last_name}")
-
-            for t in ["Apostle", "Apotre", "Pastor", "Pasteur"]:
-                queries.append(f"{t} {self.name}")
-
-            if self.primary_church:
-                queries.append(self.primary_church)
-
-        # Remove duplicates
-        seen = set()
-        unique_queries = []
-        for q in queries:
-            q_lower = q.lower()
-            if q_lower not in seen:
-                seen.add(q_lower)
-                unique_queries.append(q)
-
-        return unique_queries
+        return queries
 
     def get_identity_markers(self) -> dict:
         """

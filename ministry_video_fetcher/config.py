@@ -487,16 +487,21 @@ def generate_search_queries(
     name: str,
     title: Optional[str] = None,
     primary_church: Optional[str] = None,
-    platform: str = "youtube"
+    platform: str = "youtube",
+    include_aliases: Optional[List[str]] = None
 ) -> List[str]:
     """
     Generate platform-specific search queries from a preacher's name.
+
+    Generates comprehensive bilingual queries in both English and French
+    for maximum coverage across international ministries.
 
     Args:
         name: Full name of the preacher (e.g., "Narcisse Majila")
         title: Optional title (e.g., "Apostle", "Pastor")
         primary_church: Optional church name
         platform: 'youtube' or 'facebook'
+        include_aliases: Optional list of name aliases/misspellings
 
     Returns:
         List of search queries optimized for the platform
@@ -506,27 +511,42 @@ def generate_search_queries(
     last_name = name_parts[-1] if len(name_parts) > 1 else name
     first_name = name_parts[0] if len(name_parts) > 1 else name
 
-    # Title variations in English and French
+    # Title variations in English and French (with and without accents)
     title_pairs = [
-        ("Apostle", "Apotre"),
-        ("Apostle", "Apôtre"),
-        ("Pastor", "Pasteur"),
-        ("Bishop", "Évêque"),
-        ("Prophet", "Prophète"),
-        ("Evangelist", "Évangéliste"),
-        ("Reverend", "Révérend"),
+        ("Apostle", "Apotre", "Apôtre"),
+        ("Pastor", "Pasteur", "Pasteur"),
+        ("Bishop", "Eveque", "Évêque"),
+        ("Prophet", "Prophete", "Prophète"),
+        ("Evangelist", "Evangeliste", "Évangéliste"),
+        ("Reverend", "Reverend", "Révérend"),
+        ("Dr.", "Dr.", "Dr."),
     ]
 
-    # Preaching keywords in English and French
-    keywords_en = ["sermon", "preaching", "teaching", "message", "deliverance"]
-    keywords_fr = ["predication", "enseignement", "message", "culte", "delivrance"]
+    # Preaching keywords in English and French (with and without accents)
+    keywords_en = [
+        "sermon", "preaching", "teaching", "message", "deliverance",
+        "healing", "prophecy", "prayer", "revival", "crusade",
+        "conference", "service", "worship"
+    ]
+    keywords_fr = [
+        "predication", "prédication", "enseignement", "message",
+        "delivrance", "délivrance", "guerison", "guérison",
+        "prophetie", "prophétie", "priere", "prière",
+        "reveil", "réveil", "croisade", "conference", "conférence",
+        "culte", "adoration", "louange"
+    ]
+
+    # Event-related keywords
+    event_keywords = ["2024", "2023", "2025", "live", "direct", "en direct"]
 
     if platform == "youtube":
         # YouTube supports exact match with quotes
         queries.append(f'"{name}"')
 
-        # With preaching keywords
-        for kw in keywords_en + keywords_fr:
+        # With preaching keywords (both languages)
+        for kw in keywords_en:
+            queries.append(f'"{name}" {kw}')
+        for kw in keywords_fr:
             queries.append(f'"{name}" {kw}')
 
         # With title variations
@@ -534,12 +554,11 @@ def generate_search_queries(
             queries.append(f'"{title} {name}"')
             queries.append(f'"{title} {last_name}"')
 
-        # Add common title variations
-        for en_title, fr_title in title_pairs:
-            queries.append(f'"{en_title} {name}"')
-            queries.append(f'"{fr_title} {name}"')
-            queries.append(f'"{en_title} {last_name}"')
-            queries.append(f'"{fr_title} {last_name}"')
+        # Add common title variations (all versions)
+        for titles in title_pairs:
+            for t in titles:
+                queries.append(f'"{t} {name}"')
+                queries.append(f'"{t} {last_name}"')
 
         # Church-related queries
         if primary_church:
@@ -547,28 +566,56 @@ def generate_search_queries(
             queries.append(f'"{primary_church}" {last_name}')
             queries.append(f'"{primary_church}" {name}')
 
+        # Add aliases/misspellings
+        if include_aliases:
+            for alias in include_aliases:
+                queries.append(f'"{alias}"')
+                for kw in keywords_en[:3] + keywords_fr[:3]:
+                    queries.append(f'"{alias}" {kw}')
+
     else:  # Facebook
         # Facebook search doesn't use quotes the same way
         queries.append(name)
 
-        # With preaching keywords
-        for kw in keywords_en + keywords_fr:
+        # With preaching keywords (both English and French)
+        for kw in keywords_en:
+            queries.append(f"{name} {kw}")
+        for kw in keywords_fr:
             queries.append(f"{name} {kw}")
 
-        # With title variations
+        # With title variations (all versions - English, French no accent, French with accent)
         if title:
             queries.append(f"{title} {name}")
             queries.append(f"{title} {last_name}")
 
-        # Add common title variations
-        for en_title, fr_title in title_pairs:
-            queries.append(f"{en_title} {name}")
-            queries.append(f"{fr_title} {name}")
+        # Add all title variations for comprehensive coverage
+        for titles in title_pairs:
+            for t in titles:
+                queries.append(f"{t} {name}")
+                queries.append(f"{t} {last_name}")
+
+        # Event-based queries (for finding recent content)
+        for event_kw in event_keywords:
+            queries.append(f"{name} {event_kw}")
+            queries.append(f"{last_name} {event_kw}")
 
         # Church-related queries
         if primary_church:
             queries.append(primary_church)
             queries.append(f"{primary_church} {last_name}")
+            queries.append(f"{primary_church} {name}")
+
+        # Add aliases/misspellings (important for Facebook)
+        if include_aliases:
+            for alias in include_aliases:
+                queries.append(alias)
+                for kw in keywords_en[:3] + keywords_fr[:3]:
+                    queries.append(f"{alias} {kw}")
+
+        # Special Facebook queries with "video" keyword
+        queries.append(f"{name} video")
+        queries.append(f"{name} vidéo")
+        queries.append(f"{name} facebook live")
 
     # Remove duplicates while preserving order
     seen = set()

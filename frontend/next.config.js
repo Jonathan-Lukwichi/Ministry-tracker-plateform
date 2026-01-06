@@ -12,6 +12,10 @@ const nextConfig = {
       },
     ],
   },
+  // Disable static generation for pages using useSearchParams
+  experimental: {
+    missingSuspenseWithCSRBailout: false,
+  },
 };
 
 module.exports = nextConfig;

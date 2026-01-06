@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 interface KPICardProps {
   title: string;
   value: string | number;
+  description?: string;
   trend?: number;
   trendLabel?: string;
   icon?: React.ReactNode;

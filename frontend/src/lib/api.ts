@@ -388,7 +388,7 @@ export const api = {
   /**
    * Upload a preacher photo
    */
-  uploadPreacherPhoto: async (preacherId: number, file: File): Promise<{ success: boolean; filename: string; message: string }> => {
+  uploadPreacherPhoto: async (preacherId: number, file: File): Promise<{ success: boolean; id?: string; filename: string; message: string }> => {
     const formData = new FormData();
     formData.append("file", file);
 

@@ -46,6 +46,9 @@ export default function KPICard({
       <div className="flex-1">
         <p className="text-sm font-medium text-gray-500">{title}</p>
         <p className="mt-2 text-3xl font-bold text-gray-900">{value}</p>
+        {description && (
+          <p className="mt-1 text-sm text-gray-500">{description}</p>
+        )}
         {trend !== undefined && trend !== null && (
           <div className={cn("mt-2 flex items-center gap-1 text-sm", getTrendColor())}>
             {getTrendIcon()}

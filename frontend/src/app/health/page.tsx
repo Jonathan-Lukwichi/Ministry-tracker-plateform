@@ -75,8 +75,8 @@ export default function HealthPage() {
         // Handle both array and object responses for trends
         if (Array.isArray(trendsRes)) {
           setTrends(trendsRes);
-        } else if (trendsRes && Array.isArray(trendsRes.trends)) {
-          setTrends(trendsRes.trends);
+        } else if (trendsRes && typeof trendsRes === 'object' && 'trends' in trendsRes && Array.isArray((trendsRes as { trends: WorkloadTrend[] }).trends)) {
+          setTrends((trendsRes as { trends: WorkloadTrend[] }).trends);
         } else {
           setTrends([]);
         }

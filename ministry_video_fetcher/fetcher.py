@@ -15,7 +15,7 @@ try:
 except ImportError:
     raise ImportError("yt-dlp is required. Install with: pip install yt-dlp")
 
-from models import VideoMetadata, FetchLog, FetchSummary, ContentType, Preacher
+from models import VideoMetadata, FetchLog, FetchSummary, ContentType, Preacher, Language
 from classifier import ContentClassifier, get_classifier_for_preacher
 from database import Database
 from config import (

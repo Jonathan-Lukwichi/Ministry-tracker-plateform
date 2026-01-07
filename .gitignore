@@ -11,6 +11,8 @@ __pycache__/
 # Database files (It's better not to track databases in Git)
 *.db
 *.sqlite3
+# Exception: Allow the ministry videos database for deployment
+!ministry_video_fetcher/ministry_videos.db
 
 # VS Code user settings
 .vscode/*.bak

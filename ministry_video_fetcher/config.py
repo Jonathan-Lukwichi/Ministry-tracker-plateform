@@ -164,6 +164,64 @@ FACEBOOK_FETCHER_CONFIG = {
 
     # Max results per search/page
     "max_results_per_query": 50,  # Facebook returns fewer results typically
+
+    # Hybrid mode settings (NEW)
+    "use_graph_api": True,        # Enable Graph API for discovery
+    "use_ytdlp_fallback": True,   # Use yt-dlp for video URL extraction
+    "prefer_graph_api": True,     # Prefer Graph API when available
+}
+
+# =============================================================================
+# FACEBOOK GRAPH API SETTINGS (NEW - Hybrid Approach)
+# =============================================================================
+
+FACEBOOK_GRAPH_API_CONFIG = {
+    # API Version and Base URL
+    "api_version": "v18.0",
+    "base_url": "https://graph.facebook.com/v18.0",
+
+    # Token management
+    "token_file": "fb_token.json",  # Persisted token storage (gitignored)
+    "token_refresh_days_before_expiry": 7,  # Refresh 7 days before expiry
+
+    # App credentials - USER MUST FILL IN after creating Facebook Developer App
+    # 1. Go to https://developers.facebook.com/
+    # 2. Create a Business app
+    # 3. Copy App ID and App Secret here
+    "app_id": "",          # From Facebook Developer Console
+    "app_secret": "",      # From Facebook Developer Console
+    "access_token": "",    # Page Access Token (long-lived, 60 days)
+
+    # Page IDs to fetch videos from
+    # These are the Facebook page usernames or numeric IDs
+    "page_ids": [
+        "ramahfgpta",  # Ramah Full Gospel Church Pretoria
+        "ApostleNarcisseMajilaMinistries",  # Apostle's official ministry page
+        # Add more page IDs as discovered
+    ],
+
+    # Rate limiting (Graph API is more lenient)
+    "requests_per_hour": 200,    # Graph API rate limit
+    "request_delay": 0.5,        # Delay between requests (seconds)
+    "retry_count": 3,
+    "retry_delay": 2.0,
+
+    # Video fields to fetch from Graph API
+    "video_fields": [
+        "id",
+        "title",
+        "description",
+        "created_time",
+        "length",           # Duration in seconds
+        "thumbnails",       # Array of thumbnail URLs
+        "permalink_url",    # Facebook watch URL
+        "from",             # Page that posted
+        "live_status",      # Was it a live video?
+    ],
+
+    # Filtering
+    "min_duration_seconds": 600,  # Ignore videos < 10 minutes (likely not sermons)
+    "max_results_per_page": 100,  # Pagination limit
 }
 
 # =============================================================================

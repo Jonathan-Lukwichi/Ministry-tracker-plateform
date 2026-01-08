@@ -28,10 +28,26 @@ from config import (
     FACEBOOK_PAGES,
     FACEBOOK_SEARCH_QUERIES,
     FACEBOOK_FETCHER_CONFIG,
+    FACEBOOK_GRAPH_API_CONFIG,
     PLATFORM_YOUTUBE,
     PLATFORM_FACEBOOK,
     generate_search_queries,
 )
+
+# Import Facebook Graph API client (optional - graceful fallback if not available)
+try:
+    from facebook_api import (
+        FacebookGraphClient,
+        TokenManager,
+        FacebookAPIError,
+        TokenExpiredError,
+        TokenInvalidError,
+    )
+    GRAPH_API_AVAILABLE = True
+except ImportError:
+    GRAPH_API_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    # Will be logged when actually trying to use Graph API
 
 # Configure logging
 logging.basicConfig(

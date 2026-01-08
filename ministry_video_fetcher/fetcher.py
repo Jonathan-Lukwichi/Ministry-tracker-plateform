@@ -465,18 +465,40 @@ class VideoFetcher:
     # FACEBOOK FETCHING METHODS
     # =========================================================================
 
-    def fetch_facebook(self) -> FetchSummary:
+    def fetch_facebook(self, use_hybrid: Optional[bool] = None) -> FetchSummary:
         """
         Run complete fetch from all Facebook sources.
 
-        1. Fetches from configured Facebook pages (only in legacy mode)
-        2. Runs Facebook search queries (dynamic or legacy)
+        1. If hybrid mode enabled: Uses Graph API for discovery + yt-dlp for enrichment
+        2. Otherwise: Uses pure yt-dlp (requires cookies)
         3. Uses face recognition to verify preacher's presence
         4. Stores results in database
+
+        Args:
+            use_hybrid: Override hybrid mode setting (default: use config)
 
         Returns:
             FetchSummary with statistics
         """
+        # Check if hybrid mode should be used
+        if use_hybrid is None:
+            use_hybrid = FACEBOOK_FETCHER_CONFIG.get("use_graph_api", True)
+
+        # Use hybrid approach if enabled and configured
+        if use_hybrid and GRAPH_API_AVAILABLE:
+            # Check if we have a token configured
+            if FACEBOOK_GRAPH_API_CONFIG.get("access_token"):
+                logger.info("Using HYBRID mode (Graph API + yt-dlp)")
+                return self.fetch_facebook_hybrid()
+            else:
+                logger.info(
+                    "Hybrid mode enabled but no token configured. "
+                    "Run: python main.py fb-token --set YOUR_TOKEN"
+                )
+
+        # Fall back to pure yt-dlp mode
+        logger.info("Using pure yt-dlp mode for Facebook")
+
         summary = FetchSummary()
         self._seen_ids.clear()
 

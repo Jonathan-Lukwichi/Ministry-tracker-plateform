@@ -21,6 +21,10 @@ __pycache__/
 # Claude AI settings
 .claude/
 
+# Facebook API token (sensitive - do not commit)
+fb_token.json
+ministry_video_fetcher/fb_token.json
+
 # Temporary and OS-specific files
 temp_docx_content.txt
 nul

@@ -495,6 +495,197 @@ def cmd_verify_faces(args):
 
 
 # =============================================================================
+# FACEBOOK TOKEN MANAGEMENT
+# =============================================================================
+
+def cmd_fb_token(args):
+    """Manage Facebook API token for hybrid fetching."""
+    print("\n" + "=" * 60)
+    print("FACEBOOK API TOKEN MANAGEMENT")
+    print("=" * 60)
+
+    try:
+        from facebook_api import TokenManager, FacebookGraphClient
+        from config import FACEBOOK_GRAPH_API_CONFIG
+    except ImportError as e:
+        print(f"\n[!] Error importing facebook_api module: {e}")
+        print("    Make sure 'requests' is installed: pip install requests")
+        print("=" * 60 + "\n")
+        return
+
+    # Initialize token manager
+    token_manager = TokenManager(config=FACEBOOK_GRAPH_API_CONFIG)
+
+    if args.status:
+        # Show token status
+        info = token_manager.get_token_info()
+
+        print(f"\nToken Status:")
+        print(f"  Has token:        {'Yes' if info['has_token'] else 'No'}")
+        print(f"  Is valid:         {'Yes' if info['is_valid'] else 'No'}")
+
+        if info['expires_at']:
+            print(f"  Expires at:       {info['expires_at']}")
+            print(f"  Days remaining:   {info['days_until_expiry']}")
+            print(f"  Needs refresh:    {'Yes' if info['needs_refresh'] else 'No'}")
+
+        if info['token_type']:
+            print(f"  Token type:       {info['token_type']}")
+        if info['page_id']:
+            print(f"  Page ID:          {info['page_id']}")
+
+        # Try to validate with Facebook if we have a token
+        if info['has_token']:
+            print("\n  Validating with Facebook...")
+            try:
+                client = FacebookGraphClient(config=FACEBOOK_GRAPH_API_CONFIG)
+                fb_info = client.validate_token()
+
+                if fb_info.get('is_valid'):
+                    print("  [OK] Token is valid on Facebook!")
+                    if fb_info.get('expires_at'):
+                        print(f"  Facebook says expires: {fb_info['expires_at']}")
+                    if fb_info.get('scopes'):
+                        print(f"  Scopes: {', '.join(fb_info['scopes'])}")
+                else:
+                    print("  [!] Token validation failed on Facebook")
+                    if fb_info.get('error'):
+                        print(f"      Error: {fb_info['error']}")
+
+                client.close()
+            except Exception as e:
+                print(f"  [!] Could not validate with Facebook: {e}")
+
+    elif args.set:
+        # Set a new token
+        token = args.set
+
+        print(f"\nSetting new token...")
+        print(f"  Token (first 10 chars): {token[:10]}...")
+
+        # Save the token
+        token_manager.save_token(
+            token=token,
+            token_type=args.type or "page",
+            page_id=args.page_id
+        )
+
+        print("  [OK] Token saved!")
+
+        # Also update config.py (suggest user to do it manually)
+        print("\n  To use immediately, also update config.py:")
+        print(f"    FACEBOOK_GRAPH_API_CONFIG['access_token'] = '{token[:20]}...'")
+
+        # Validate the new token
+        print("\n  Validating new token...")
+        try:
+            client = FacebookGraphClient(config={
+                **FACEBOOK_GRAPH_API_CONFIG,
+                'access_token': token
+            })
+            fb_info = client.validate_token()
+
+            if fb_info.get('is_valid'):
+                print("  [OK] Token is valid!")
+            else:
+                print("  [!] Token validation failed")
+                if fb_info.get('error'):
+                    print(f"      Error: {fb_info['error']}")
+
+            client.close()
+        except Exception as e:
+            print(f"  [!] Could not validate token: {e}")
+
+    elif args.refresh:
+        # Attempt to refresh the token
+        print(f"\nAttempting to refresh token...")
+
+        # Check if we have app credentials
+        if not FACEBOOK_GRAPH_API_CONFIG.get('app_id') or not FACEBOOK_GRAPH_API_CONFIG.get('app_secret'):
+            print("  [!] App ID and App Secret required for token refresh.")
+            print("      Set them in config.py FACEBOOK_GRAPH_API_CONFIG")
+            print("=" * 60 + "\n")
+            return
+
+        try:
+            client = FacebookGraphClient(config=FACEBOOK_GRAPH_API_CONFIG)
+            result = client.exchange_for_long_lived_token()
+
+            if result.get('access_token'):
+                print("  [OK] Token refreshed successfully!")
+                print(f"  New token (first 10 chars): {result['access_token'][:10]}...")
+                print(f"  Expires in: {result['expires_in'] // 86400} days")
+            else:
+                print("  [!] Token refresh failed")
+
+            client.close()
+        except Exception as e:
+            print(f"  [!] Token refresh failed: {e}")
+
+    elif args.test:
+        # Test fetching videos
+        print(f"\nTesting Facebook Graph API connection...")
+
+        if not token_manager.get_access_token():
+            print("  [!] No token configured. Use --set to add one.")
+            print("=" * 60 + "\n")
+            return
+
+        try:
+            client = FacebookGraphClient(config=FACEBOOK_GRAPH_API_CONFIG)
+
+            # Get configured pages
+            page_ids = FACEBOOK_GRAPH_API_CONFIG.get('page_ids', ['ramahfgpta'])
+
+            for page_id in page_ids[:2]:  # Test first 2 pages only
+                print(f"\n  Testing page: {page_id}")
+
+                try:
+                    # Get page info
+                    page_info = client.get_page_info(page_id)
+                    print(f"    Page name: {page_info.get('name', 'Unknown')}")
+                    print(f"    Followers: {page_info.get('fan_count', 'N/A')}")
+
+                    # Get first few videos
+                    videos = client.get_page_videos(page_id, limit=3)
+                    print(f"    Videos found: {len(videos)}")
+
+                    if videos:
+                        for v in videos[:3]:
+                            title = v.get('title') or v.get('description', 'No title')[:50]
+                            duration = v.get('length', 0)
+                            print(f"      - {title[:40]}... ({duration}s)")
+
+                except Exception as e:
+                    print(f"    [!] Error: {e}")
+
+            client.close()
+            print("\n  [OK] Graph API test complete!")
+
+        except Exception as e:
+            print(f"  [!] Test failed: {e}")
+
+    else:
+        # Show help
+        print("\nUsage:")
+        print("  python main.py fb-token --status        Show token status")
+        print("  python main.py fb-token --set TOKEN     Set new access token")
+        print("  python main.py fb-token --refresh       Refresh token (requires app credentials)")
+        print("  python main.py fb-token --test          Test Graph API connection")
+        print("\nOptions for --set:")
+        print("  --type page|user|app    Token type (default: page)")
+        print("  --page-id ID            Associated page ID")
+        print("\nTo get a Facebook Page Access Token:")
+        print("  1. Go to https://developers.facebook.com/")
+        print("  2. Create a Business type app")
+        print("  3. Add 'pages_read_engagement' permission")
+        print("  4. Use Graph API Explorer to generate Page Access Token")
+        print("  5. Run: python main.py fb-token --set YOUR_TOKEN")
+
+    print("=" * 60 + "\n")
+
+
+# =============================================================================
 # UTILITY FUNCTIONS
 # =============================================================================
 

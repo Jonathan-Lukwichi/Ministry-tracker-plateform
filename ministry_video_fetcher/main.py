@@ -871,6 +871,44 @@ Examples:
     )
     verify_parser.set_defaults(func=cmd_verify_faces)
 
+    # Facebook token management command
+    fb_token_parser = subparsers.add_parser(
+        "fb-token",
+        help="Manage Facebook API token for hybrid fetching",
+        description="Manage Facebook Graph API token for video discovery"
+    )
+    fb_token_parser.add_argument(
+        "--status", "-s",
+        action="store_true",
+        help="Show current token status"
+    )
+    fb_token_parser.add_argument(
+        "--set",
+        metavar="TOKEN",
+        help="Set a new access token"
+    )
+    fb_token_parser.add_argument(
+        "--refresh", "-r",
+        action="store_true",
+        help="Refresh the token (requires app credentials)"
+    )
+    fb_token_parser.add_argument(
+        "--test", "-t",
+        action="store_true",
+        help="Test Graph API connection"
+    )
+    fb_token_parser.add_argument(
+        "--type",
+        choices=["page", "user", "app"],
+        default="page",
+        help="Token type (default: page)"
+    )
+    fb_token_parser.add_argument(
+        "--page-id",
+        help="Associated page ID"
+    )
+    fb_token_parser.set_defaults(func=cmd_fb_token)
+
     args = parser.parse_args()
 
     if args.command is None:

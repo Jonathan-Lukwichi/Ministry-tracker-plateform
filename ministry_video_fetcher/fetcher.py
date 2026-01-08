@@ -917,6 +917,342 @@ class VideoFetcher:
 
         return combined
 
+    # =========================================================================
+    # HYBRID FACEBOOK FETCHING (Graph API + yt-dlp)
+    # =========================================================================
+
+    def _init_graph_api_client(self) -> Optional["FacebookGraphClient"]:
+        """
+        Initialize Facebook Graph API client if available and configured.
+
+        Returns:
+            FacebookGraphClient instance or None if not available
+        """
+        if not GRAPH_API_AVAILABLE:
+            logger.warning(
+                "Facebook Graph API client not available. "
+                "Install with: pip install requests"
+            )
+            return None
+
+        try:
+            client = FacebookGraphClient(config=FACEBOOK_GRAPH_API_CONFIG)
+
+            # Check if token is available
+            if not client.token_manager.get_access_token():
+                logger.warning(
+                    "No Facebook API token configured. "
+                    "Run: python main.py fb-token --set YOUR_TOKEN"
+                )
+                return None
+
+            # Validate token
+            if not client.token_manager.is_token_valid():
+                logger.warning("Facebook API token is expired or invalid")
+                return None
+
+            # Check if refresh is needed
+            if client.token_manager.needs_refresh():
+                days = client.token_manager.days_until_expiry()
+                logger.warning(
+                    f"Facebook API token expires in {days} days. "
+                    "Consider refreshing: python main.py fb-token --refresh"
+                )
+
+            return client
+
+        except Exception as e:
+            logger.error(f"Failed to initialize Graph API client: {e}")
+            return None
+
+    def fetch_facebook_hybrid(self) -> FetchSummary:
+        """
+        Fetch Facebook videos using hybrid approach: Graph API + yt-dlp.
+
+        1. Uses Graph API to discover videos from configured pages
+        2. Converts Graph API data to VideoMetadata
+        3. Uses yt-dlp to enrich videos with playable URLs (for face recognition)
+        4. Falls back to pure yt-dlp if Graph API is unavailable
+
+        Returns:
+            FetchSummary with statistics
+        """
+        summary = FetchSummary()
+        self._seen_ids.clear()
+
+        preacher_name = self.preacher.name if self.preacher else "Legacy Mode"
+        logger.info(f"Starting HYBRID Facebook fetch for: {preacher_name}")
+
+        # Try to initialize Graph API client
+        graph_client = self._init_graph_api_client()
+
+        if not graph_client:
+            logger.info("Falling back to pure yt-dlp for Facebook fetching")
+            return self.fetch_facebook()
+
+        # Get configured page IDs
+        page_ids = FACEBOOK_GRAPH_API_CONFIG.get("page_ids", [])
+        if not page_ids:
+            logger.warning("No Facebook page IDs configured in FACEBOOK_GRAPH_API_CONFIG")
+            return self.fetch_facebook()
+
+        logger.info(f"Using Graph API to fetch from {len(page_ids)} pages")
+
+        # Fetch from each page using Graph API
+        for page_id in page_ids:
+            logger.info(f"Fetching from Facebook page: {page_id}")
+            try:
+                # Get videos from Graph API
+                graph_videos = graph_client.get_page_videos(
+                    page_id,
+                    limit=FACEBOOK_GRAPH_API_CONFIG.get("max_videos_per_page", 100)
+                )
+
+                logger.info(f"  Graph API returned {len(graph_videos)} videos")
+
+                # Convert and process each video
+                for graph_data in graph_videos:
+                    try:
+                        # Convert Graph API data to VideoMetadata
+                        video = self._graph_api_to_video_metadata(graph_data, page_id)
+                        if not video:
+                            continue
+
+                        # Skip duplicates
+                        if video.video_id in self._seen_ids:
+                            summary.duplicates_removed += 1
+                            continue
+
+                        if self.db.video_exists(video.video_id):
+                            summary.duplicates_removed += 1
+                            continue
+
+                        self._seen_ids.add(video.video_id)
+                        summary.total_videos_found += 1
+
+                        # Try to enrich with yt-dlp for face recognition
+                        enriched_video = self._enrich_with_ytdlp(video, graph_data)
+                        video = enriched_video if enriched_video else video
+
+                        # Classify the video
+                        video = self.classifier.classify(video)
+
+                        # Apply filters
+                        if video.content_type == ContentType.MUSIC and video.confidence_score > 0.50:
+                            summary.music_excluded += 1
+                            continue
+
+                        if video.content_type == ContentType.UNKNOWN:
+                            if video.confidence_score < STORAGE_CONFIG.get("min_storage_confidence", 0.50):
+                                summary.low_confidence_excluded += 1
+                                continue
+
+                        # Store in database
+                        if self.db.insert_video(video):
+                            summary.new_videos_added += 1
+                            logger.info(
+                                f"  Added: {video.video_id} - "
+                                f"{video.title[:40] if video.title else 'Unknown'}... "
+                                f"(face_verified: {video.face_verified})"
+                            )
+
+                        # Rate limiting
+                        time.sleep(FACEBOOK_GRAPH_API_CONFIG.get("request_delay", 0.5))
+
+                    except Exception as e:
+                        error_msg = f"Error processing video: {e}"
+                        logger.debug(error_msg)
+                        summary.errors.append(error_msg)
+
+            except TokenExpiredError as e:
+                logger.error(f"Token expired: {e}")
+                logger.info("Falling back to yt-dlp for remaining pages")
+                summary.errors.append(f"Token expired for {page_id}")
+                break
+
+            except TokenInvalidError as e:
+                logger.error(f"Token invalid: {e}")
+                logger.info("Please set a new token: python main.py fb-token --set YOUR_TOKEN")
+                summary.errors.append(f"Token invalid: {e}")
+                break
+
+            except FacebookAPIError as e:
+                logger.error(f"Graph API error for {page_id}: {e}")
+                summary.errors.append(f"API error for {page_id}: {e}")
+                continue
+
+            except Exception as e:
+                logger.error(f"Error fetching from {page_id}: {e}")
+                summary.errors.append(f"Error for {page_id}: {e}")
+                continue
+
+        # Close the client
+        if graph_client:
+            graph_client.close()
+
+        # Get final statistics
+        summary.total_in_database = self.db.get_video_count()
+        summary.videos_needing_review = self.db.get_review_count()
+        summary.unique_channels = self.db.get_unique_channels_count()
+        summary.total_preaching_hours = self.db.get_total_preaching_hours()
+        summary.top_channels = self.db.get_channel_breakdown()[:5]
+
+        oldest, newest = self.db.get_date_range()
+        summary.oldest_video_date = self._format_date(oldest)
+        summary.newest_video_date = self._format_date(newest)
+
+        logger.info(
+            f"Hybrid Facebook fetch complete: "
+            f"{summary.total_videos_found} found, "
+            f"{summary.new_videos_added} added, "
+            f"{summary.duplicates_removed} duplicates"
+        )
+
+        return summary
+
+    def _graph_api_to_video_metadata(
+        self, graph_data: Dict, page_id: str
+    ) -> Optional[VideoMetadata]:
+        """
+        Convert Facebook Graph API video data to VideoMetadata.
+
+        Args:
+            graph_data: Video data from Graph API
+            page_id: The page ID the video came from
+
+        Returns:
+            VideoMetadata or None if conversion fails
+        """
+        try:
+            video_id = graph_data.get("id")
+            if not video_id:
+                return None
+
+            # Parse upload date
+            upload_date = None
+            created_time = graph_data.get("created_time")
+            if created_time:
+                try:
+                    # Graph API returns ISO format: 2024-01-15T10:30:00+0000
+                    dt = datetime.fromisoformat(created_time.replace("+0000", "+00:00"))
+                    upload_date = dt.strftime("%Y%m%d")
+                except Exception:
+                    pass
+
+            # Get duration in seconds
+            duration = graph_data.get("length", 0)
+            if isinstance(duration, str):
+                try:
+                    duration = int(float(duration))
+                except ValueError:
+                    duration = 0
+
+            # Build video URL
+            permalink = graph_data.get("permalink_url", "")
+            if permalink:
+                video_url = f"https://www.facebook.com{permalink}"
+            else:
+                video_url = f"https://www.facebook.com/watch?v={video_id}"
+
+            # Get thumbnail
+            thumbnail_url = None
+            thumbnails = graph_data.get("thumbnails", {})
+            if thumbnails and "data" in thumbnails:
+                thumb_list = thumbnails["data"]
+                if thumb_list:
+                    # Get highest quality thumbnail
+                    thumbnail_url = thumb_list[-1].get("uri")
+
+            # Get channel/page info
+            from_data = graph_data.get("from", {})
+            channel_name = from_data.get("name", page_id)
+            channel_id = from_data.get("id", page_id)
+
+            # Create VideoMetadata
+            video = VideoMetadata(
+                video_id=f"fb_{video_id}",  # Prefix with fb_ to avoid ID conflicts
+                title=graph_data.get("title") or graph_data.get("description", "")[:100],
+                description=graph_data.get("description", ""),
+                channel_name=channel_name,
+                channel_id=channel_id,
+                upload_date=upload_date,
+                duration_seconds=duration,
+                view_count=0,  # Not always available in Graph API
+                video_url=video_url,
+                thumbnail_url=thumbnail_url,
+                platform=PLATFORM_FACEBOOK,
+                preacher_id=self.preacher_id,
+                search_query_used=f"graph_api:{page_id}",
+            )
+
+            return video
+
+        except Exception as e:
+            logger.debug(f"Error converting Graph API data: {e}")
+            return None
+
+    def _enrich_with_ytdlp(
+        self, video: VideoMetadata, graph_data: Dict
+    ) -> Optional[VideoMetadata]:
+        """
+        Enrich video metadata with yt-dlp for playable URL extraction.
+
+        This is needed for face recognition to work, as Graph API
+        doesn't provide direct video URLs.
+
+        Args:
+            video: VideoMetadata with basic info
+            graph_data: Original Graph API data
+
+        Returns:
+            Enriched VideoMetadata or None if enrichment fails
+        """
+        # Check if yt-dlp enrichment is enabled
+        if not FACEBOOK_FETCHER_CONFIG.get("use_ytdlp_fallback", True):
+            return None
+
+        opts = self._ydl_opts.copy()
+
+        # Add cookies if configured
+        fb_config = FACEBOOK_FETCHER_CONFIG
+        cookies_file = fb_config.get("cookies_file")
+        if cookies_file:
+            import os
+            if os.path.exists(cookies_file):
+                opts["cookiefile"] = cookies_file
+
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                # Try to get video info from yt-dlp
+                info = ydl.extract_info(video.video_url, download=False)
+
+                if info:
+                    # Update video with yt-dlp data
+                    enriched = VideoMetadata.from_ytdlp(
+                        info,
+                        video.search_query_used,
+                        preacher_id=self.preacher_id
+                    )
+
+                    # Preserve Graph API fields that might be better
+                    enriched.video_id = video.video_id  # Keep our fb_ prefixed ID
+                    enriched.platform = PLATFORM_FACEBOOK
+
+                    if not enriched.title and video.title:
+                        enriched.title = video.title
+                    if not enriched.description and video.description:
+                        enriched.description = video.description
+                    if not enriched.channel_name and video.channel_name:
+                        enriched.channel_name = video.channel_name
+
+                    logger.debug(f"Enriched video {video.video_id} with yt-dlp data")
+                    return enriched
+
+        except Exception as e:
+            logger.debug(f"Could not enrich {video.video_id} with yt-dlp: {e}")
+
+        return None
+
 
 def run_fetch(db_path: Optional[str] = None) -> FetchSummary:
     """

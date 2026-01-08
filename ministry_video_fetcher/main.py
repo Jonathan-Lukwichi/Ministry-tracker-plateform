@@ -732,6 +732,12 @@ Examples:
   python main.py verify-faces             Run face verification on all unverified videos
   python main.py verify-faces --limit 10  Verify only 10 videos
   python main.py verify-faces --channel "Ramah"  Verify videos from Ramah channel
+
+Facebook API Token Management:
+  python main.py fb-token --status        Show token status
+  python main.py fb-token --set TOKEN     Set new Facebook API token
+  python main.py fb-token --test          Test Graph API connection
+  python main.py fb-token --refresh       Refresh token (requires app credentials)
         """
     )
 

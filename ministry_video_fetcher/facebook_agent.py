@@ -634,12 +634,15 @@ class FacebookVideoAgent:
         if newest:
             summary.newest_video_date = f"{newest[:4]}-{newest[4:6]}-{newest[6:]}" if len(newest) == 8 else newest
 
+        # Get discovered channels count from database
+        discovered_channels = self.get_discovered_channels()
+
         logger.info(f"\nDiscovery complete:")
         logger.info(f"  Videos found: {summary.total_videos_found}")
         logger.info(f"  Videos added: {summary.new_videos_added}")
         logger.info(f"  Duplicates: {summary.duplicates_removed}")
         logger.info(f"  Excluded: {summary.music_excluded + summary.low_confidence_excluded}")
-        logger.info(f"  Discovered channels: {len(self._discovered_channels)}")
+        logger.info(f"  Discovered channels: {len(discovered_channels)}")
 
         return summary
 

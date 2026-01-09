@@ -170,6 +170,36 @@ class Database:
         # Run migration to set up initial preacher data
         self._migrate_initial_preacher(cursor)
 
+        # =====================================================================
+        # DISCOVERED CHANNELS TABLE (Facebook Agent)
+        # =====================================================================
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS discovered_channels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                platform TEXT NOT NULL DEFAULT 'facebook',
+                channel_name TEXT NOT NULL,
+                channel_url TEXT NOT NULL UNIQUE,
+                page_id TEXT,
+                discovered_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                last_scanned TEXT,
+                video_count INTEGER DEFAULT 0,
+                preacher_id INTEGER,
+                is_active INTEGER DEFAULT 1,
+                notes TEXT,
+                FOREIGN KEY (preacher_id) REFERENCES preachers(id)
+            )
+        """)
+
+        # Create index for discovered channels
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_discovered_channels_platform
+            ON discovered_channels(platform)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_discovered_channels_preacher
+            ON discovered_channels(preacher_id)
+        """)
+
         conn.commit()
         conn.close()
 

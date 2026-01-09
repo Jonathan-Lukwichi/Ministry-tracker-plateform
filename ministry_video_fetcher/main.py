@@ -13,6 +13,11 @@ Usage:
     python main.py review             - List videos flagged for review
     python main.py export             - Export to CSV
     python main.py sample             - Show sample videos
+
+Facebook Agent (Automated Discovery):
+    python main.py fb-agent           - Run automated Facebook video discovery
+    python main.py fb-agent --scan    - Scan discovered channels for new videos
+    python main.py fb-agent --channels- List discovered channels
 """
 
 import sys

@@ -849,6 +849,13 @@ Facebook API Token Management:
   python main.py fb-token --set TOKEN     Set new Facebook API token
   python main.py fb-token --test          Test Graph API connection
   python main.py fb-token --refresh       Refresh token (requires app credentials)
+
+Facebook Agent (Automated Discovery):
+  python main.py fb-agent                 Run automated video discovery
+  python main.py fb-agent -q "query1"     Use custom search queries
+  python main.py fb-agent --scan          Scan discovered channels
+  python main.py fb-agent --channels      List discovered channels
+  python main.py fb-agent --limit 20      Limit to 20 videos
         """
     )
 

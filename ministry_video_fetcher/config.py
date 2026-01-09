@@ -225,6 +225,45 @@ FACEBOOK_GRAPH_API_CONFIG = {
 }
 
 # =============================================================================
+# FACEBOOK AGENT SETTINGS (Playwright-based automated discovery)
+# =============================================================================
+
+FACEBOOK_AGENT_CONFIG = {
+    # Browser automation settings
+    "headless": True,               # Run browser in headless mode (no visible window)
+    "slow_mo": 100,                 # Slow down Playwright actions by this many ms
+    "timeout": 30000,               # Default timeout for page operations (30s)
+
+    # Scrolling and pagination
+    "max_scroll_iterations": 10,    # Max number of scroll attempts per search
+    "scroll_delay": 2.0,            # Seconds to wait after each scroll for content to load
+    "scroll_amount": 800,           # Pixels to scroll each iteration
+
+    # Rate limiting
+    "max_videos_per_search": 50,    # Max videos to extract per search query
+    "delay_between_videos": 1.5,    # Seconds delay between processing videos
+    "delay_between_searches": 5.0,  # Seconds delay between search queries
+
+    # Authentication
+    "cookies_file": "facebook_cookies.txt",  # Browser cookies for Facebook login
+
+    # Channel learning
+    "discovered_channels_file": "discovered_channels.json",  # Stores discovered channels
+    "remember_channels": True,       # Remember channels where preacher appears
+
+    # Search configuration
+    "use_facebook_watch": True,      # Search on Facebook Watch for videos
+    "search_base_url": "https://www.facebook.com/watch/search/?q=",
+
+    # Validation
+    "require_face_verification": True,   # Require face match before storing
+    "min_video_duration": 600,           # Minimum duration (10 min) for sermons
+
+    # User agent
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+}
+
+# =============================================================================
 # SEARCH QUERIES (YOUTUBE)
 # =============================================================================
 

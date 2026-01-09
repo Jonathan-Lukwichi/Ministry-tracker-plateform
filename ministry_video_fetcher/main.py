@@ -686,6 +686,112 @@ def cmd_fb_token(args):
 
 
 # =============================================================================
+# FACEBOOK AGENT (Playwright-based automated discovery)
+# =============================================================================
+
+def cmd_fb_agent(args):
+    """Run automated Facebook video discovery using Playwright browser automation."""
+    print("\n" + "=" * 60)
+    print("FACEBOOK VIDEO AGENT")
+    print("=" * 60)
+
+    try:
+        from facebook_agent import FacebookVideoAgent
+        from config import FACEBOOK_AGENT_CONFIG, FACEBOOK_SEARCH_QUERIES
+    except ImportError as e:
+        print(f"\n[!] Error importing facebook_agent module: {e}")
+        print("    Make sure Playwright is installed:")
+        print("      pip install playwright")
+        print("      playwright install chromium")
+        print("=" * 60 + "\n")
+        return
+
+    db = Database()
+
+    if args.channels:
+        # List discovered channels
+        print("\nDiscovered Channels:")
+        print("-" * 60)
+
+        try:
+            agent = FacebookVideoAgent(db)
+            channels = agent.get_discovered_channels()
+
+            if not channels:
+                print("  No channels discovered yet.")
+                print("  Run 'python main.py fb-agent' to start discovering.")
+            else:
+                for i, channel in enumerate(channels, 1):
+                    name = channel.get('name', 'Unknown')
+                    url = channel.get('url', 'N/A')
+                    video_count = channel.get('video_count', 0)
+                    last_scan = channel.get('last_scanned', 'Never')
+                    print(f"  {i}. {name}")
+                    print(f"     URL: {url}")
+                    print(f"     Videos found: {video_count}")
+                    print(f"     Last scanned: {last_scan}")
+                    print()
+
+                print(f"Total: {len(channels)} channels discovered")
+
+        except Exception as e:
+            print(f"  [!] Error: {e}")
+
+    elif args.scan:
+        # Scan previously discovered channels for new videos
+        print("\nScanning discovered channels for new videos...")
+        print("-" * 60)
+
+        try:
+            agent = FacebookVideoAgent(db)
+            limit = args.limit
+
+            summary = agent.scan_discovered_channels(limit=limit)
+            print("\n" + "-" * 60)
+            summary.print_summary()
+
+        except Exception as e:
+            print(f"\n[!] Error during channel scan: {e}")
+            import traceback
+            traceback.print_exc()
+
+    else:
+        # Run discovery search
+        queries = None
+        if args.queries:
+            queries = args.queries
+            print(f"\nUsing custom queries: {queries}")
+        else:
+            # Use top queries from config
+            queries = FACEBOOK_SEARCH_QUERIES[:10]  # First 10 queries
+            print(f"\nUsing {len(queries)} search queries from config")
+
+        print(f"Limit: {args.limit or 'unlimited'} videos")
+        print(f"Headless: {FACEBOOK_AGENT_CONFIG.get('headless', True)}")
+        print("-" * 60)
+
+        try:
+            agent = FacebookVideoAgent(db)
+            summary = agent.discover_videos(queries=queries, limit=args.limit)
+
+            print("\n" + "-" * 60)
+            summary.print_summary()
+
+            # Show discovered channels
+            channels = agent.get_discovered_channels()
+            if channels:
+                print(f"\nDiscovered {len(channels)} channels where preacher appears.")
+                print("Run 'python main.py fb-agent --channels' to see them.")
+
+        except Exception as e:
+            print(f"\n[!] Error during video discovery: {e}")
+            import traceback
+            traceback.print_exc()
+
+    print("=" * 60 + "\n")
+
+
+# =============================================================================
 # UTILITY FUNCTIONS
 # =============================================================================
 

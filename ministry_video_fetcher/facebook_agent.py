@@ -145,54 +145,55 @@ class FacebookVideoAgent:
         if cookies_file and os.path.exists(cookies_file):
             self._ydl_opts["cookiefile"] = cookies_file
 
-    def _load_discovered_channels(self) -> None:
-        """Load previously discovered channels from file."""
-        channels_file = self.config.get("discovered_channels_file")
-        if channels_file and os.path.exists(channels_file):
-            try:
-                with open(channels_file, 'r', encoding='utf-8') as f:
-                    self._discovered_channels = json.load(f)
-                logger.info(f"Loaded {len(self._discovered_channels)} discovered channels")
-            except Exception as e:
-                logger.warning(f"Could not load discovered channels: {e}")
-                self._discovered_channels = {}
+    def _add_discovered_channel(self, channel_id: str, channel_name: str, channel_url: Optional[str] = None) -> None:
+        """
+        Add or update a discovered channel in the database.
 
-    def _save_discovered_channels(self) -> None:
-        """Save discovered channels to file."""
-        channels_file = self.config.get("discovered_channels_file")
-        if channels_file:
-            try:
-                with open(channels_file, 'w', encoding='utf-8') as f:
-                    json.dump(self._discovered_channels, f, indent=2, default=str)
-                logger.debug(f"Saved {len(self._discovered_channels)} discovered channels")
-            except Exception as e:
-                logger.warning(f"Could not save discovered channels: {e}")
+        Args:
+            channel_id: Facebook page/channel ID
+            channel_name: Display name of the channel
+            channel_url: Full URL to the channel (optional)
+        """
+        if not channel_url:
+            channel_url = f"https://www.facebook.com/{channel_id}/videos"
 
-    def _add_discovered_channel(self, channel_id: str, channel_name: str, video_count: int = 1) -> None:
-        """Add or update a discovered channel."""
-        if channel_id not in self._discovered_channels:
-            self._discovered_channels[channel_id] = {
-                "name": channel_name,
-                "video_count": video_count,
-                "first_seen": datetime.now().isoformat(),
-                "last_seen": datetime.now().isoformat(),
-            }
+        # Check if channel already exists
+        existing = self.db.get_discovered_channel_by_url(channel_url)
+
+        if not existing:
+            # Add new channel
+            self.db.add_discovered_channel(
+                channel_name=channel_name,
+                channel_url=channel_url,
+                platform=PLATFORM_FACEBOOK,
+                page_id=channel_id,
+                preacher_id=self.preacher_id
+            )
             logger.info(f"Discovered new channel: {channel_name} ({channel_id})")
         else:
-            self._discovered_channels[channel_id]["video_count"] += video_count
-            self._discovered_channels[channel_id]["last_seen"] = datetime.now().isoformat()
-
-        self._save_discovered_channels()
+            # Increment video count for existing channel
+            self.db.increment_channel_video_count(channel_url)
+            logger.debug(f"Updated channel: {channel_name}")
 
     def get_discovered_channels(self) -> List[Dict]:
-        """Get list of discovered channels sorted by video count."""
-        channels = []
-        for channel_id, data in self._discovered_channels.items():
-            channels.append({
-                "channel_id": channel_id,
-                **data
+        """Get list of discovered channels from database sorted by video count."""
+        channels = self.db.get_all_discovered_channels(
+            platform=PLATFORM_FACEBOOK,
+            preacher_id=self.preacher_id
+        )
+
+        # Format for display
+        result = []
+        for ch in channels:
+            result.append({
+                "channel_id": ch.get("page_id"),
+                "name": ch.get("channel_name"),
+                "url": ch.get("channel_url"),
+                "video_count": ch.get("video_count", 0),
+                "first_seen": ch.get("discovered_at"),
+                "last_scanned": ch.get("last_scanned"),
             })
-        return sorted(channels, key=lambda x: x["video_count"], reverse=True)
+        return result
 
     # =========================================================================
     # BROWSER MANAGEMENT

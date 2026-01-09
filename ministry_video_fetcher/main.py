@@ -1021,6 +1021,35 @@ Facebook API Token Management:
     )
     fb_token_parser.set_defaults(func=cmd_fb_token)
 
+    # Facebook Agent command (Playwright-based automated discovery)
+    fb_agent_parser = subparsers.add_parser(
+        "fb-agent",
+        help="Automated Facebook video discovery using browser automation",
+        description="Search Facebook for preacher videos using Playwright browser automation"
+    )
+    fb_agent_parser.add_argument(
+        "--queries", "-q",
+        nargs="+",
+        metavar="QUERY",
+        help="Custom search queries (default: uses config queries)"
+    )
+    fb_agent_parser.add_argument(
+        "--limit", "-l",
+        type=int,
+        help="Maximum number of videos to discover"
+    )
+    fb_agent_parser.add_argument(
+        "--scan", "-s",
+        action="store_true",
+        help="Scan previously discovered channels for new videos"
+    )
+    fb_agent_parser.add_argument(
+        "--channels", "-c",
+        action="store_true",
+        help="List discovered channels where preacher appears"
+    )
+    fb_agent_parser.set_defaults(func=cmd_fb_agent)
+
     args = parser.parse_args()
 
     if args.command is None:

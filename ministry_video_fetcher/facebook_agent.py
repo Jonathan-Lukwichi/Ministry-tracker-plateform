@@ -123,10 +123,6 @@ class FacebookVideoAgent:
         else:
             self.classifier = ContentClassifier()
 
-        # Track discovered channels
-        self._discovered_channels: Dict[str, Dict] = {}
-        self._load_discovered_channels()
-
         # Track seen video IDs
         self._seen_ids: Set[str] = set()
 

@@ -1514,6 +1514,242 @@ class Database:
         return results
 
 
+    # =========================================================================
+    # DISCOVERED CHANNELS OPERATIONS (Facebook Agent)
+    # =========================================================================
+
+    def add_discovered_channel(
+        self,
+        channel_name: str,
+        channel_url: str,
+        platform: str = "facebook",
+        page_id: Optional[str] = None,
+        preacher_id: Optional[int] = None,
+        notes: Optional[str] = None
+    ) -> Optional[int]:
+        """
+        Add a newly discovered channel where the preacher appears.
+
+        Args:
+            channel_name: Name of the channel/page
+            channel_url: URL to the channel
+            platform: Platform (default: facebook)
+            page_id: Platform-specific page ID
+            preacher_id: Associated preacher ID
+            notes: Optional notes
+
+        Returns:
+            The ID of the created channel, or None if already exists
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                INSERT INTO discovered_channels
+                (platform, channel_name, channel_url, page_id, preacher_id, notes, discovered_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                platform,
+                channel_name,
+                channel_url,
+                page_id,
+                preacher_id,
+                notes,
+                datetime.now().isoformat()
+            ))
+
+            conn.commit()
+            channel_id = cursor.lastrowid
+            conn.close()
+            return channel_id
+
+        except sqlite3.IntegrityError:
+            # Channel URL already exists
+            conn.close()
+            return None
+
+    def get_discovered_channel_by_url(self, channel_url: str) -> Optional[Dict[str, Any]]:
+        """Get a discovered channel by its URL."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM discovered_channels WHERE channel_url = ?",
+            (channel_url,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            return dict(row)
+        return None
+
+    def channel_exists(self, channel_url: str) -> bool:
+        """Check if a channel URL is already in discovered channels."""
+        return self.get_discovered_channel_by_url(channel_url) is not None
+
+    def get_all_discovered_channels(
+        self,
+        platform: Optional[str] = None,
+        preacher_id: Optional[int] = None,
+        active_only: bool = True
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all discovered channels with optional filtering.
+
+        Args:
+            platform: Filter by platform (facebook, youtube)
+            preacher_id: Filter by preacher
+            active_only: Only return active channels
+
+        Returns:
+            List of channel dictionaries
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        query = "SELECT * FROM discovered_channels WHERE 1=1"
+        params = []
+
+        if active_only:
+            query += " AND is_active = 1"
+
+        if platform:
+            query += " AND platform = ?"
+            params.append(platform)
+
+        if preacher_id:
+            query += " AND preacher_id = ?"
+            params.append(preacher_id)
+
+        query += " ORDER BY video_count DESC, discovered_at DESC"
+
+        cursor.execute(query, params)
+        results = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return results
+
+    def update_discovered_channel(
+        self,
+        channel_id: int,
+        video_count: Optional[int] = None,
+        last_scanned: Optional[str] = None,
+        is_active: Optional[bool] = None,
+        notes: Optional[str] = None
+    ) -> bool:
+        """Update a discovered channel's information."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        updates = []
+        params = []
+
+        if video_count is not None:
+            updates.append("video_count = ?")
+            params.append(video_count)
+
+        if last_scanned is not None:
+            updates.append("last_scanned = ?")
+            params.append(last_scanned)
+
+        if is_active is not None:
+            updates.append("is_active = ?")
+            params.append(1 if is_active else 0)
+
+        if notes is not None:
+            updates.append("notes = ?")
+            params.append(notes)
+
+        if not updates:
+            conn.close()
+            return False
+
+        params.append(channel_id)
+
+        cursor.execute(
+            f"UPDATE discovered_channels SET {', '.join(updates)} WHERE id = ?",
+            params
+        )
+
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+        return affected > 0
+
+    def increment_channel_video_count(self, channel_url: str, increment: int = 1) -> bool:
+        """Increment the video count for a channel and update last_scanned."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE discovered_channels
+            SET video_count = video_count + ?,
+                last_scanned = ?
+            WHERE channel_url = ?
+        """, (increment, datetime.now().isoformat(), channel_url))
+
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+        return affected > 0
+
+    def delete_discovered_channel(self, channel_id: int) -> bool:
+        """Delete a discovered channel (hard delete)."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM discovered_channels WHERE id = ?",
+            (channel_id,)
+        )
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+        return affected > 0
+
+    def get_discovered_channels_stats(self) -> Dict[str, Any]:
+        """Get statistics about discovered channels."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        stats = {}
+
+        # Total channels
+        cursor.execute("SELECT COUNT(*) as count FROM discovered_channels WHERE is_active = 1")
+        stats["total_channels"] = cursor.fetchone()["count"]
+
+        # By platform
+        cursor.execute("""
+            SELECT platform, COUNT(*) as count
+            FROM discovered_channels
+            WHERE is_active = 1
+            GROUP BY platform
+        """)
+        stats["by_platform"] = {
+            row["platform"]: row["count"] for row in cursor.fetchall()
+        }
+
+        # Total videos discovered
+        cursor.execute("""
+            SELECT COALESCE(SUM(video_count), 0) as total
+            FROM discovered_channels
+            WHERE is_active = 1
+        """)
+        stats["total_videos_discovered"] = cursor.fetchone()["total"]
+
+        # Recently discovered
+        cursor.execute("""
+            SELECT channel_name, channel_url, discovered_at, video_count
+            FROM discovered_channels
+            WHERE is_active = 1
+            ORDER BY discovered_at DESC
+            LIMIT 5
+        """)
+        stats["recent_discoveries"] = [dict(row) for row in cursor.fetchall()]
+
+        conn.close()
+        return stats
+
+
 # Convenience functions for quick access
 def get_db(db_path: Optional[str] = None) -> Database:
     """Get a Database instance."""

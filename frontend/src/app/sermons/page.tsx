@@ -91,6 +91,22 @@ export default function SermonsPage() {
             const placesData = await api.getVideosByPlace();
             setPlaces(placesData.places);
             break;
+          case "platform":
+            const platformData = await api.getVideosByPlatform();
+            const platformStats: PlatformStats[] = [
+              {
+                name: "YouTube",
+                count: platformData.youtube,
+                total_duration: (platformData.hours_by_platform?.youtube || 0) * 3600
+              },
+              {
+                name: "Facebook",
+                count: platformData.facebook,
+                total_duration: (platformData.hours_by_platform?.facebook || 0) * 3600
+              },
+            ];
+            setPlatforms(platformStats);
+            break;
         }
       } catch (err) {
         setError("Failed to load data");

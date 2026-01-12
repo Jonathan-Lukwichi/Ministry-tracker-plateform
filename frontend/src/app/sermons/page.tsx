@@ -187,12 +187,18 @@ export default function SermonsPage() {
     setSelectedPlace(placeName);
   };
 
+  // Handle clicking on a platform
+  const handlePlatformClick = (platform: "youtube" | "facebook") => {
+    setSelectedPlatform(platform);
+  };
+
   // Go back to list view
   const handleBack = () => {
     setSelectedYear(null);
     setSelectedMonth(null);
     setSelectedChannel(null);
     setSelectedPlace(null);
+    setSelectedPlatform(null);
     setVideos([]);
   };
 

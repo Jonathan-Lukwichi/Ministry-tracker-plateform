@@ -121,6 +121,7 @@ export default function SermonsPage() {
     setSelectedMonth(null);
     setSelectedChannel(null);
     setSelectedPlace(null);
+    setSelectedPlatform(null);
     setVideos([]);
 
     loadData();

@@ -305,7 +305,7 @@ class FacebookVideoAgent:
             search_url = f"https://www.facebook.com/watch/search/?q={query.replace(' ', '%20')}"
             logger.info(f"Searching: {search_url}")
 
-            self._page.goto(search_url, wait_until="networkidle")
+            self._page.goto(search_url, wait_until="domcontentloaded")
             time.sleep(2)  # Wait for initial load
 
             # Check if we're logged in

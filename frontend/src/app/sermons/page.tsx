@@ -60,6 +60,7 @@ export default function SermonsPage() {
     { id: "week", label: "By Week", icon: <CalendarRange size={18} /> },
     { id: "channel", label: "By Channel", icon: <Video size={18} /> },
     { id: "place", label: "By Place", icon: <MapPin size={18} /> },
+    { id: "platform", label: "By Source", icon: <Globe size={18} /> },
   ];
 
   // Load initial data based on active tab

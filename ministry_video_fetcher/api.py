@@ -207,6 +207,198 @@ def get_videos(
     return {"videos": videos, "total": len(df)}
 
 
+@app.post("/api/videos")
+def create_video(video_data: VideoCreate):
+    """
+    Create a new video/sermon manually.
+
+    This allows adding sermons that weren't fetched automatically from YouTube/Facebook.
+    """
+    import uuid
+    from datetime import datetime
+
+    # Generate a unique video_id for manually added videos
+    video_id = f"manual_{uuid.uuid4().hex[:12]}"
+
+    # Convert content_type and language to enums
+    try:
+        content_type = ContentType(video_data.content_type)
+    except ValueError:
+        content_type = ContentType.PREACHING
+
+    try:
+        language = Language(video_data.language_detected)
+    except ValueError:
+        language = Language.FRENCH
+
+    # Create VideoMetadata object
+    video = VideoMetadata(
+        video_id=video_id,
+        title=video_data.title,
+        description=video_data.description,
+        duration=video_data.duration,
+        upload_date=video_data.upload_date,
+        view_count=video_data.view_count or 0,
+        channel_name=video_data.channel_name,
+        video_url=video_data.video_url,
+        thumbnail_url=video_data.thumbnail_url,
+        platform=video_data.platform or "youtube",
+        content_type=content_type,
+        language_detected=language,
+        needs_review=video_data.needs_review,
+        preacher_id=video_data.preacher_id,
+        confidence_score=1.0,  # Manual entry = high confidence
+        fetched_at=datetime.now(),
+        search_query_used="manual_entry",
+    )
+
+    # Insert into database
+    success = db.insert_video(video)
+
+    if success:
+        return {
+            "success": True,
+            "message": "Video created successfully",
+            "video_id": video_id,
+            "video": {
+                "video_id": video_id,
+                "title": video_data.title,
+                "channel_name": video_data.channel_name,
+                "duration": video_data.duration,
+                "upload_date": video_data.upload_date,
+                "content_type": content_type.value,
+                "language": language.value,
+                "platform": video_data.platform,
+            }
+        }
+    else:
+        raise HTTPException(status_code=400, detail="Failed to create video")
+
+
+@app.put("/api/videos/{video_id}")
+def update_video(video_id: str, video_data: VideoUpdate):
+    """
+    Update an existing video/sermon.
+
+    This allows correcting categorization errors (content type, language, etc.)
+    or updating other metadata.
+    """
+    # Get existing video
+    existing = db.get_video_by_id(video_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Video with ID {video_id} not found")
+
+    # Update only the fields that were provided
+    update_dict = {}
+
+    if video_data.title is not None:
+        update_dict["title"] = video_data.title
+    if video_data.description is not None:
+        update_dict["description"] = video_data.description
+    if video_data.duration is not None:
+        update_dict["duration"] = video_data.duration
+    if video_data.upload_date is not None:
+        update_dict["upload_date"] = video_data.upload_date
+    if video_data.view_count is not None:
+        update_dict["view_count"] = video_data.view_count
+    if video_data.channel_name is not None:
+        update_dict["channel_name"] = video_data.channel_name
+    if video_data.video_url is not None:
+        update_dict["video_url"] = video_data.video_url
+    if video_data.thumbnail_url is not None:
+        update_dict["thumbnail_url"] = video_data.thumbnail_url
+    if video_data.platform is not None:
+        update_dict["platform"] = video_data.platform
+    if video_data.content_type is not None:
+        try:
+            update_dict["content_type"] = ContentType(video_data.content_type).value
+        except ValueError:
+            update_dict["content_type"] = video_data.content_type
+    if video_data.language_detected is not None:
+        try:
+            update_dict["language_detected"] = Language(video_data.language_detected).value
+        except ValueError:
+            update_dict["language_detected"] = video_data.language_detected
+    if video_data.needs_review is not None:
+        update_dict["needs_review"] = video_data.needs_review
+    if video_data.preacher_id is not None:
+        update_dict["preacher_id"] = video_data.preacher_id
+
+    if not update_dict:
+        return {"success": True, "message": "No changes provided", "video_id": video_id}
+
+    # Perform the update directly in database
+    conn = db._get_connection()
+    cursor = conn.cursor()
+
+    set_clause = ", ".join([f"{k} = ?" for k in update_dict.keys()])
+    cursor.execute(
+        f"UPDATE videos SET {set_clause} WHERE video_id = ?",
+        list(update_dict.values()) + [video_id]
+    )
+
+    conn.commit()
+    affected = cursor.rowcount
+    conn.close()
+
+    if affected > 0:
+        return {
+            "success": True,
+            "message": "Video updated successfully",
+            "video_id": video_id,
+            "updated_fields": list(update_dict.keys())
+        }
+    else:
+        raise HTTPException(status_code=400, detail="Failed to update video")
+
+
+@app.delete("/api/videos/{video_id}")
+def delete_video(video_id: str):
+    """Delete a video from the database."""
+    # Check if video exists
+    existing = db.get_video_by_id(video_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Video with ID {video_id} not found")
+
+    # Delete from database
+    conn = db._get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM videos WHERE video_id = ?", (video_id,))
+    conn.commit()
+    affected = cursor.rowcount
+    conn.close()
+
+    if affected > 0:
+        return {"success": True, "message": "Video deleted successfully", "video_id": video_id}
+    else:
+        raise HTTPException(status_code=400, detail="Failed to delete video")
+
+
+@app.get("/api/videos/{video_id}")
+def get_video_by_id(video_id: str):
+    """Get a single video by its ID."""
+    video = db.get_video_by_id(video_id)
+    if not video:
+        raise HTTPException(status_code=404, detail=f"Video with ID {video_id} not found")
+
+    return {
+        "video_id": video.video_id,
+        "title": video.title,
+        "description": video.description,
+        "channel_name": video.channel_name,
+        "duration": video.duration,
+        "upload_date": video.upload_date,
+        "view_count": video.view_count,
+        "content_type": video.content_type.value if hasattr(video.content_type, 'value') else video.content_type,
+        "language": video.language_detected.value if hasattr(video.language_detected, 'value') else video.language_detected,
+        "video_url": video.video_url,
+        "thumbnail_url": video.thumbnail_url,
+        "platform": video.platform,
+        "needs_review": video.needs_review,
+        "preacher_id": video.preacher_id,
+    }
+
+
 @app.get("/api/videos/by-year")
 def get_videos_by_year():
     """Get videos grouped by year."""

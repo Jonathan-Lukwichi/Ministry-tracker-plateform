@@ -498,15 +498,23 @@ class FacebookVideoAgent:
         if video.content_type == ContentType.MUSIC and video.confidence_score > 0.50:
             return False, "music"
 
-        if video.content_type == ContentType.UNKNOWN:
-            # For agent discovery, we're stricter - require face verification
-            if not video.face_verified and video.confidence_score < 0.60:
-                return False, "low_confidence"
-
-        # For agent discovery, prefer face-verified videos
+        # Check if face verification is required
+        require_face = self.config.get("require_face_verification", True)
         min_confidence = STORAGE_CONFIG.get("min_storage_confidence", 0.50)
-        if not video.face_verified and video.confidence_score < min_confidence:
-            return False, "no_face_match"
+
+        if require_face:
+            # Strict mode: require face verification for unknown content
+            if video.content_type == ContentType.UNKNOWN:
+                if not video.face_verified and video.confidence_score < 0.60:
+                    return False, "low_confidence"
+
+            # Require face match or high confidence
+            if not video.face_verified and video.confidence_score < min_confidence:
+                return False, "no_face_match"
+        else:
+            # Relaxed mode: use identity matching from title/description
+            if video.content_type == ContentType.UNKNOWN and video.confidence_score < 0.40:
+                return False, "low_confidence"
 
         # Store in database
         if self.db.insert_video(video):

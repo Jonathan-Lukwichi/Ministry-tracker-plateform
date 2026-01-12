@@ -776,7 +776,7 @@ def cmd_fb_agent(args):
         print("-" * 60)
 
         try:
-            agent = FacebookVideoAgent(db)
+            agent = FacebookVideoAgent(db, config=FACEBOOK_AGENT_CONFIG)
             summary = agent.discover_videos(queries=queries, limit=args.limit)
 
             print("\n" + "-" * 60)

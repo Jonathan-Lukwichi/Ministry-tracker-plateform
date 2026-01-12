@@ -826,15 +826,30 @@ class FaceTestRequest(BaseModel):
 @app.get("/api/reference-photos")
 def get_reference_photos():
     """Get list of reference photos for face recognition."""
-    if not FACE_RECOGNITION_AVAILABLE:
-        return {"photos": [], "available": False, "error": "Face recognition not available"}
-
     try:
-        recognizer = get_recognizer()
-        photos = recognizer.get_reference_photos()
+        photos_with_data = []
+
+        if FACE_RECOGNITION_AVAILABLE:
+            recognizer = get_recognizer()
+            photos = recognizer.get_reference_photos()
+            model_loaded = recognizer.model_loaded
+        else:
+            # Read photos directly from directory when face recognition not available
+            photos = []
+            if os.path.isdir(PHOTOS_DIR):
+                import glob
+                supported_formats = ('*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG')
+                for fmt in supported_formats:
+                    for path in glob.glob(os.path.join(PHOTOS_DIR, fmt)):
+                        filename = os.path.basename(path)
+                        try:
+                            size = os.path.getsize(path)
+                        except:
+                            size = 0
+                        photos.append({"filename": filename, "path": path, "size": size})
+            model_loaded = False
 
         # Add base64 encoded thumbnails for display
-        photos_with_data = []
         for photo in photos:
             photo_data = {
                 "filename": photo["filename"],
@@ -857,8 +872,8 @@ def get_reference_photos():
 
         return {
             "photos": photos_with_data,
-            "available": True,
-            "model_loaded": recognizer.model_loaded,
+            "available": FACE_RECOGNITION_AVAILABLE,
+            "model_loaded": model_loaded,
         }
 
     except Exception as e:

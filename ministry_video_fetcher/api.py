@@ -74,6 +74,41 @@ app.add_middleware(
 db = Database()
 
 
+# Pydantic schemas for video CRUD operations
+class VideoCreate(BaseModel):
+    """Schema for creating a new video/sermon manually."""
+    title: str
+    description: Optional[str] = None
+    duration: Optional[int] = None  # seconds
+    upload_date: Optional[str] = None  # YYYYMMDD format
+    view_count: Optional[int] = 0
+    channel_name: Optional[str] = None
+    video_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+    platform: str = "youtube"  # youtube or facebook
+    content_type: str = "PREACHING"  # PREACHING, MUSIC, UNKNOWN
+    language_detected: str = "FR"  # FR, EN, UNKNOWN
+    needs_review: bool = False
+    preacher_id: Optional[int] = None
+
+
+class VideoUpdate(BaseModel):
+    """Schema for updating an existing video/sermon."""
+    title: Optional[str] = None
+    description: Optional[str] = None
+    duration: Optional[int] = None
+    upload_date: Optional[str] = None
+    view_count: Optional[int] = None
+    channel_name: Optional[str] = None
+    video_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+    platform: Optional[str] = None
+    content_type: Optional[str] = None
+    language_detected: Optional[str] = None
+    needs_review: Optional[bool] = None
+    preacher_id: Optional[int] = None
+
+
 @app.get("/api/stats")
 def get_stats():
     """Get video statistics from database."""

@@ -447,6 +447,8 @@ export default function SermonsPage() {
       ? `Sermons from ${selectedChannel}`
       : selectedPlace
       ? `Sermons from ${selectedPlace}`
+      : selectedPlatform
+      ? `Videos from ${selectedPlatform === "youtube" ? "YouTube" : "Facebook"}`
       : "";
 
     return (

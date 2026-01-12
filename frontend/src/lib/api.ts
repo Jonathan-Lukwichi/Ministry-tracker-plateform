@@ -147,6 +147,20 @@ export const api = {
     return fetchAPI<PlacesResponse>("/api/videos/by-place");
   },
 
+  /**
+   * Get videos grouped by platform (YouTube vs Facebook)
+   */
+  getVideosByPlatform: async (): Promise<{ youtube: number; facebook: number; hours_by_platform: { youtube?: number; facebook?: number } }> => {
+    return fetchAPI("/api/videos/by-platform");
+  },
+
+  /**
+   * Get videos from a specific platform
+   */
+  getPlatformVideos: async (platform: "youtube" | "facebook", limit: number = 100): Promise<VideosResponse> => {
+    return fetchAPI<VideosResponse>(`/api/videos/platform/${platform}?limit=${limit}`);
+  },
+
   // =========================================================================
   // ANALYTICS API
   // =========================================================================

@@ -15,8 +15,9 @@ from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from database import Database
+from models import VideoMetadata, ContentType, Language
 
 # Import face recognition
 try:

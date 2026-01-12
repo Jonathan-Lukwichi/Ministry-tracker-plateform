@@ -230,9 +230,9 @@ FACEBOOK_GRAPH_API_CONFIG = {
 
 FACEBOOK_AGENT_CONFIG = {
     # Browser automation settings
-    "headless": True,               # Run browser in headless mode (no visible window)
+    "headless": False,              # Run browser in visible mode for debugging
     "slow_mo": 100,                 # Slow down Playwright actions by this many ms
-    "timeout": 30000,               # Default timeout for page operations (30s)
+    "timeout": 60000,               # Default timeout for page operations (60s)
 
     # Scrolling and pagination
     "max_scroll_iterations": 10,    # Max number of scroll attempts per search

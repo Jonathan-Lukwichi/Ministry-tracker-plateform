@@ -145,6 +145,8 @@ export default function SermonsPage() {
           data = await api.getSermons({ channel: selectedChannel, limit: 50 });
         } else if (selectedPlace) {
           data = await api.getSermons({ place: selectedPlace, limit: 50 });
+        } else if (selectedPlatform) {
+          data = await api.getPlatformVideos(selectedPlatform, 100);
         }
 
         if (data) {
@@ -157,10 +159,10 @@ export default function SermonsPage() {
       }
     }
 
-    if (selectedYear || selectedChannel || selectedPlace) {
+    if (selectedYear || selectedChannel || selectedPlace || selectedPlatform) {
       loadVideos();
     }
-  }, [selectedYear, selectedChannel, selectedPlace]);
+  }, [selectedYear, selectedChannel, selectedPlace, selectedPlatform]);
 
   // Handle clicking on a year
   const handleYearClick = (year: string) => {

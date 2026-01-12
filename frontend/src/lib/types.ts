@@ -559,3 +559,32 @@ export interface PreacherSearchQueries {
   youtube: string[];
   facebook: string[];
 }
+
+// =============================================================================
+// PLATFORM TYPES
+// =============================================================================
+
+export interface PlatformStats {
+  name: string;
+  count: number;
+  total_duration?: number;
+}
+
+export interface PlatformBreakdown {
+  youtube: number;
+  facebook: number;
+  hours_by_platform: {
+    youtube?: number;
+    facebook?: number;
+  };
+}
+
+export interface PlatformResponse {
+  platforms: PlatformStats[];
+}
+
+export interface PlatformVideosResponse {
+  videos: Video[];
+  total: number;
+  platform: string;
+}

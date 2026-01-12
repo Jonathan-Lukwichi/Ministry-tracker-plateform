@@ -374,6 +374,64 @@ export default function SermonsPage() {
           </div>
         );
 
+      case "platform":
+        return (
+          <div className="grid gap-6 sm:grid-cols-2">
+            {platforms.map((platform) => {
+              const isYouTube = platform.name === "YouTube";
+              return (
+                <button
+                  key={platform.name}
+                  onClick={() => handlePlatformClick(isYouTube ? "youtube" : "facebook")}
+                  className={cn(
+                    "card flex items-center gap-6 text-left transition-all hover:shadow-card-hover",
+                    isYouTube ? "hover:border-red-500" : "hover:border-blue-500"
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "flex h-16 w-16 items-center justify-center rounded-full",
+                      isYouTube ? "bg-red-100" : "bg-blue-100"
+                    )}
+                  >
+                    {isYouTube ? (
+                      <svg className="h-8 w-8 text-red-600" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                      </svg>
+                    ) : (
+                      <svg className="h-8 w-8 text-blue-600" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                      </svg>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <h3 className={cn(
+                      "text-2xl font-bold",
+                      isYouTube ? "text-red-600" : "text-blue-600"
+                    )}>
+                      {platform.name}
+                    </h3>
+                    <p className="mt-1 text-lg text-gray-700">
+                      {platform.count} videos
+                    </p>
+                    {platform.total_duration && platform.total_duration > 0 && (
+                      <p className="text-sm text-gray-400">
+                        {formatHours(platform.total_duration / 3600)}
+                      </p>
+                    )}
+                  </div>
+                  <div className={cn(
+                    "text-4xl font-bold",
+                    isYouTube ? "text-red-500" : "text-blue-500"
+                  )}>
+                    {platform.count}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        );
+
       default:
         return null;
     }

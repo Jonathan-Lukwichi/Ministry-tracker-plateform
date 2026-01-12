@@ -930,12 +930,18 @@ async def upload_reference_photo(file: UploadFile = File(...)):
 @app.delete("/api/reference-photos/{filename}")
 def delete_reference_photo(filename: str):
     """Delete a reference photo."""
-    if not FACE_RECOGNITION_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Face recognition not available")
-
     try:
-        recognizer = get_recognizer()
-        success = recognizer.remove_reference_photo(filename)
+        if FACE_RECOGNITION_AVAILABLE:
+            recognizer = get_recognizer()
+            success = recognizer.remove_reference_photo(filename)
+        else:
+            # Delete directly from photos directory
+            filepath = os.path.join(PHOTOS_DIR, filename)
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                success = True
+            else:
+                success = False
 
         if success:
             return {"success": True, "message": f"Photo '{filename}' deleted"}

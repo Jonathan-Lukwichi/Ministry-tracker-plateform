@@ -256,7 +256,7 @@ FACEBOOK_AGENT_CONFIG = {
     "search_base_url": "https://www.facebook.com/watch/search/?q=",
 
     # Validation
-    "require_face_verification": True,   # Require face match before storing
+    "require_face_verification": False,  # Don't require face match (use title/description matching)
     "min_video_duration": 600,           # Minimum duration (10 min) for sermons
 
     # User agent

@@ -13,6 +13,7 @@ import {
   Clock,
   ChevronLeft,
   Loader2,
+  Globe,
 } from "lucide-react";
 import {
   Video as VideoType,
@@ -21,11 +22,12 @@ import {
   WeekGroup,
   ChannelStats,
   PlaceStats,
+  PlatformStats,
 } from "@/lib/types";
 import { formatHours, cn } from "@/lib/utils";
 import api from "@/lib/api";
 
-type TabType = "year" | "month" | "week" | "channel" | "place";
+type TabType = "year" | "month" | "week" | "channel" | "place" | "platform";
 
 export default function SermonsPage() {
   const [activeTab, setActiveTab] = useState<TabType>("year");

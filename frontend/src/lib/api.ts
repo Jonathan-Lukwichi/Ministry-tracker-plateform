@@ -162,6 +162,46 @@ export const api = {
   },
 
   // =========================================================================
+  // VIDEO CRUD OPERATIONS
+  // =========================================================================
+
+  /**
+   * Get a single video by ID
+   */
+  getVideoById: async (videoId: string): Promise<Video> => {
+    return fetchAPI<Video>(`/api/videos/${videoId}`);
+  },
+
+  /**
+   * Create a new video/sermon manually
+   */
+  createVideo: async (videoData: VideoCreateData): Promise<VideoCreateResponse> => {
+    return fetchAPI<VideoCreateResponse>("/api/videos", {
+      method: "POST",
+      body: JSON.stringify(videoData),
+    });
+  },
+
+  /**
+   * Update an existing video/sermon
+   */
+  updateVideo: async (videoId: string, videoData: VideoUpdateData): Promise<VideoUpdateResponse> => {
+    return fetchAPI<VideoUpdateResponse>(`/api/videos/${videoId}`, {
+      method: "PUT",
+      body: JSON.stringify(videoData),
+    });
+  },
+
+  /**
+   * Delete a video
+   */
+  deleteVideo: async (videoId: string): Promise<{ success: boolean; message: string }> => {
+    return fetchAPI<{ success: boolean; message: string }>(`/api/videos/${videoId}`, {
+      method: "DELETE",
+    });
+  },
+
+  // =========================================================================
   // ANALYTICS API
   // =========================================================================
 

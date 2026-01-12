@@ -40,12 +40,14 @@ export default function SermonsPage() {
   const [weeks, setWeeks] = useState<WeekGroup[]>([]);
   const [channels, setChannels] = useState<ChannelStats[]>([]);
   const [places, setPlaces] = useState<PlaceStats[]>([]);
+  const [platforms, setPlatforms] = useState<PlatformStats[]>([]);
 
   // Selected filters
   const [selectedYear, setSelectedYear] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<string | null>(null);
+  const [selectedPlatform, setSelectedPlatform] = useState<"youtube" | "facebook" | null>(null);
 
   // Videos for the selected filter
   const [videos, setVideos] = useState<VideoType[]>([]);

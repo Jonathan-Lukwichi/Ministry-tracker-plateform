@@ -868,9 +868,6 @@ def get_reference_photos():
 @app.post("/api/reference-photos")
 async def upload_reference_photo(file: UploadFile = File(...)):
     """Upload a new reference photo."""
-    if not FACE_RECOGNITION_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Face recognition not available")
-
     # Validate file type
     allowed_types = ["image/jpeg", "image/png", "image/jpg"]
     if file.content_type not in allowed_types:
@@ -882,8 +879,6 @@ async def upload_reference_photo(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="File too large (max 10MB)")
 
     try:
-        recognizer = get_recognizer()
-
         # Generate unique filename if needed
         filename = file.filename
         if not filename:
@@ -891,10 +886,25 @@ async def upload_reference_photo(file: UploadFile = File(...)):
             ext = "jpg" if file.content_type == "image/jpeg" else "png"
             filename = f"reference_{uuid.uuid4().hex[:8]}.{ext}"
 
-        success = recognizer.add_reference_photo(filename, contents)
+        # If face recognition is available, use the recognizer
+        if FACE_RECOGNITION_AVAILABLE:
+            recognizer = get_recognizer()
+            success = recognizer.add_reference_photo(filename, contents)
+        else:
+            # Save directly to photos directory even without face recognition
+            os.makedirs(PHOTOS_DIR, exist_ok=True)
+            filepath = os.path.join(PHOTOS_DIR, filename)
+            with open(filepath, 'wb') as f:
+                f.write(contents)
+            success = True
 
         if success:
-            return {"success": True, "filename": filename, "message": "Photo uploaded successfully"}
+            return {
+                "success": True,
+                "filename": filename,
+                "message": "Photo uploaded successfully",
+                "face_recognition_available": FACE_RECOGNITION_AVAILABLE
+            }
         else:
             raise HTTPException(status_code=500, detail="Failed to save photo")
 

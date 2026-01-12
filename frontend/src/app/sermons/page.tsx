@@ -486,7 +486,7 @@ export default function SermonsPage() {
     );
   };
 
-  const showVideos = selectedYear || selectedChannel || selectedPlace;
+  const showVideos = selectedYear || selectedChannel || selectedPlace || selectedPlatform;
 
   return (
     <div>
